@@ -1,0 +1,1 @@
+# Traductor de Manga desde PDF - Módulo principal

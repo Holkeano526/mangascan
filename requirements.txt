@@ -1,0 +1,10 @@
+# Core
+pymupdf>=1.25.0
+requests>=2.32.0
+Pillow>=11.0.0
+
+# manga-image-translator - motor principal
+manga-image-translator
+
+# Para OpenVINO (Fase 7 opcional):
+# openvino>=2025.0.0
