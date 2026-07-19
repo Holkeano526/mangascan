@@ -1,5 +1,10 @@
 # Traductor de Manga Local (Japonés a Español Latino)
 
+![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
+![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
+![Model](https://img.shields.io/badge/model-DeepSeek_V4_Flash-orange.svg)
+
 Una herramienta automatizada de código abierto para escanear, reconocer, traducir y renderizar mangas desde su idioma original (japonés) al español latino de forma desatendida. 
 
 Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de caracteres (OCR) ejecutado de forma 100% **local** (ideal para NAS o servidores con CPU o GPU integrada) con la poderosa y económica API de **DeepSeek V4 Flash** encargada exclusivamente de la traducción del texto.
