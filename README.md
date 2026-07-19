@@ -20,6 +20,53 @@ Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de 
 
 ---
 
+## ⚙️ Arquitectura y Flujo de Procesamiento
+
+El código ha sido diseñado como un **Pipeline Asíncrono Continuo** (Zero-Disk IPC), lo que significa que el archivo PDF se procesa de forma íntegra en la memoria sin lecturas o escrituras innecesarias en el disco, maximizando el rendimiento en hardware limitado.
+
+```mermaid
+graph TD
+    A[Sube PDF en UI Web] -->|web_server.py| B(orquestador.py)
+    B -->|Envía PDF| C[1. Extracción]
+    
+    subgraph Fase 1
+    C -->|pdf_extractor.py| D[Imágenes extraídas]
+    end
+    
+    D --> E[2. Traducción Neural]
+    
+    subgraph Fase 2: El Motor Core
+    E -->|translator_engine.py| F[Detección de Texto]
+    F -->|OCR Offline| G[Texto Japonés Extraído]
+    G -->|Llamada Asíncrona API| H((DeepSeek V4 Flash))
+    H -->|Texto Español Latino| I[Inpainting Limpieza]
+    I --> J[Renderizado Texto]
+    end
+    
+    J -->|Páginas Listas| K[3. Ensamblaje]
+    
+    subgraph Fase 3
+    K -->|pdf_builder.py| L[PDF Final Traducido]
+    end
+    
+    L --> M[Descarga en Interfaz]
+    
+    classDef file fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#fff;
+    classDef api fill:#FF6B35,stroke:#fff,stroke-width:2px,color:#fff;
+    class C,D,E,F,G,I,J,K,L file;
+    class H api;
+```
+
+### Módulos del Sistema:
+
+1. **`web_server.py` (Interfaz):** Servidor FastAPI que monta la interfaz gráfica web y enruta la subida del PDF hacia el orquestador en un proceso en segundo plano (para no bloquear la página web).
+2. **`orquestador.py` (Director):** El cerebro organizativo. Carga las configuraciones, inicializa la inteligencia artificial una única vez (patrón Singleton) para que no haya que recargar los pesados modelos a la memoria RAM por cada página, y llama en orden a las herramientas de extracción, traducción y ensamblaje.
+3. **`pdf_extractor.py` (Fase de Ingesta):** Descomprime el PDF del usuario y guarda temporalmente cada página como una imagen JPG/PNG (200-300 DPI) para que la IA la pueda observar.
+4. **`translator_engine.py` (Motor de Traducción):** La joya de la corona. Mantiene vivos los algoritmos de detección visual y OCR, inyecta nuestra función propia que conecta con DeepSeek a la mitad del proceso, valida la calidad de la traducción, usa el algoritmo *LaMa* para borrar los textos originales de la imagen, e imprime los textos en español en los globos.
+5. **`pdf_builder.py` (Fase de Cierre):** Agarra todas las imágenes generadas por el motor y las vuelve a coser en un PDF de alta calidad, listo para que te lo lleves.
+
+---
+
 ## Requisitos Previos
 
 - Python 3.11 o superior (si se instala de forma manual).
