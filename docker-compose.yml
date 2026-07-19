@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  mangascan:
+    build: .
+    container_name: mangascan-ai
+    image: mangascan-ai:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # OMV/NAS: Especifica el ID de tu usuario y grupo para evitar problemas de permisos
+      - PUID=1000
+      - PGID=100
+      # Zona horaria
+      - TZ=America/Bogota
+      # Tu clave de DeepSeek
+      - DEEPSEEK_API_KEY=sk-tu_api_key_aqui
+    volumes:
+      # Datos de entrada (PDFs a subir) y salida (Traducciones y logs temporales)
+      - ./data:/app/data
+      # ¡Crítico para NAS! Guarda los gigabytes de modelos de IA de forma permanente
+      # Así no se borran ni descargan de nuevo al actualizar el contenedor.
+      - ./config:/config
+    # OMV Nativo: Obliga al contenedor a correr como tu usuario para que puedas
+    # mover y borrar los PDFs creados sin que te diga "Permission Denied" por ser de root.
+    user: "${PUID:-1000}:${PGID:-100}"

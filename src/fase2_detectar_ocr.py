@@ -66,6 +66,10 @@ def detectar_y_ocr(
     config.inpainter.inpainter = "none"   # Saltar inpainting
     config.upscale.upscaler = "none"      # Saltar upscaling
     
+    # Punto medio quirúrgico para textos pequeños/chinos dispersos
+    config.detector.text_threshold = 0.3
+    config.detector.box_threshold = 0.5
+    
     translator = MangaTranslator({"kernel_size": 3})
     
     async def process():

@@ -90,18 +90,58 @@ Si prefieres ejecutarlo en tu propio entorno:
    export DEEPSEEK_API_KEY="sk-tu_api_key_aqui"
    ```
 
-4. **Ejecución del orquestador:**
-   Puedes pasarle un PDF completo o una carpeta con imágenes.
-   ```bash
-   python -m src.orquestador "data/input/manga.pdf" --work-dir "data/output/manga_es" -v
-   ```
-   
-   **Parámetros adicionales:**
-   - `--force`: Ignora los archivos ya procesados y fuerza una nueva traducción total de cada página.
-   - `--debug`: Evita que el orquestador borre las carpetas temporales (`raw/`, `jsons/`, `render/`) al finalizar el PDF, útil para diagnósticos o para arreglar traducciones de páginas puntuales.
-   - `-v` o `--verbose`: Muestra logs paso a paso.
+## Uso (Web App Premium)
+
+El sistema ahora cuenta con una interfaz web alojada localmente, con animaciones fluidas, seguimiento en tiempo real y descarga directa.
+
+### 1. Arrancar el Servidor
+Activa tu entorno virtual y arranca el backend de FastAPI:
+
+```bash
+# Activar entorno
+source ~/env_manga/bin/activate
+
+# Arrancar la web
+uvicorn src.web_server:app --host 0.0.0.0 --port 8000
+```
+
+### 2. Usar la Interfaz
+1. Abre tu navegador y dirígete a la IP de tu NAS (o `http://localhost:8000` si estás en la misma máquina).
+2. Arrastra y suelta tu manga PDF.
+3. Observa la terminal en vivo y la barra de progreso mientras el motor de traducción trabaja.
+4. Una vez finalice, haz clic en el botón de descarga iluminado para llevarte tu PDF traducido.
+
+### Ejecución en NAS (OpenMediaVault) con Docker Compose
+Si prefieres correrlo de manera aislada (ideal para tu NAS), he incluido un `docker-compose.yml` pre-optimizado para OpenMediaVault, que maneja tus permisos (PUID/PGID) y enruta los modelos pesados a una carpeta persistente para que no saturen tu disco.
+
+```bash
+# Simplemente levanta el contenedor en segundo plano
+docker-compose up -d
+```
+Accede a `http://IP_DE_TU_NAS:8000` y listo.
 
 ---
+
+## 🛠️ Personalización Avanzada
+
+### Modificar el Prompt de la Inteligencia Artificial
+El comportamiento de DeepSeek (tono, estilo y reglas de traducción) puede ser modificado a tu gusto editando el archivo `src/fase3_traducir.py`. Busca la sección `PROMPT_SISTEMA` y ajusta las instrucciones para que el modelo hable de manera más formal, use jerga específica o mantenga honoríficos japoneses.
+
+### Configuración de Globos de Texto (Sensibilidad)
+Por defecto, el sistema viene configurado con un "Punto Medio" quirúrgico para encontrar textos en burbujas inusuales (como formas hexagonales) y textos dispersos. Si notas que ignora textos muy claros o une párrafos que no debería, puedes modificar los umbrales de detección. 
+Estos valores viven en:
+- `src/fase2_detectar_ocr.py` (Línea 70 aprox: `config.detector.text_threshold` y `box_threshold`)
+- `src/fase4_inpainting_render.py` (Mismos valores, ¡recuerda que ambos deben coincidir!)
+
+> **Nota:** Para entender más sobre cómo estos valores afectan el tamaño y fusión de las cajas de texto (por ejemplo usando `unclip_ratio`), te recomendamos consultar la [documentación oficial de manga-image-translator](https://github.com/zyddnys/manga-image-translator).
+
+---
+
+## ⚠️ Limitaciones Conocidas
+
+* **Idiomas Soportados:** El modelo de OCR (`48px`) está enfocado principalmente en Japonés, Coreano, y algunas variantes de Chino. **No soporta de manera confiable todos los idiomas asiáticos** (ejemplo: puede arrojar basura o caracteres mezclados al intentar leer Tailandés).
+* **Textos Muy Juntos:** Dependiendo de la diagramación del manga, el sistema de detección puede fusionar diálogos adyacentes si los globos están excesivamente pegados. Si esto ocurre, revisar la sección de configuración de globos.
+* **Archivos Extra Grandes:** Asegúrate de que el disco del NAS tenga espacio suficiente, ya que la extracción a PNG de PDFs de más de 200 MB genera una cantidad inmensa de datos temporales.
 
 ## 📂 Arquitectura Interna del Pipeline
 

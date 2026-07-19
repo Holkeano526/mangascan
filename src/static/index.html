@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MangaScan AI Translator</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-anim"></div>
+    <div class="container">
+        <header>
+            <h1>MangaScan <span class="accent">AI</span></h1>
+            <p>Traducción neuronal impulsada por DeepSeek V3</p>
+        </header>
+
+        <main>
+            <div id="dropzone" class="glass-panel">
+                <div class="upload-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <h2>Sube tu Manga PDF</h2>
+                    <p>Arrastra y suelta tu archivo aquí o haz clic para buscar</p>
+                    <input type="file" id="fileInput" accept="application/pdf" hidden>
+                </div>
+            </div>
+
+            <div id="progress-container" class="glass-panel hidden">
+                <div class="status-header">
+                    <h3 id="status-text">Procesando...</h3>
+                    <div class="spinner"></div>
+                </div>
+                
+                <div class="progress-bar-bg">
+                    <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                </div>
+                
+                <div class="terminal-container">
+                    <div id="terminal" class="terminal"></div>
+                </div>
+                
+                <a id="download-btn" class="btn primary-btn hidden" href="#" download>
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Descargar PDF Traducido
+                </a>
+            </div>
+        </main>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

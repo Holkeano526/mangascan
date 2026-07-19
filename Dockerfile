@@ -23,16 +23,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el código fuente
 COPY src/ ./src/
 
-# Volúmenes para entrada/salida y caché de modelos ML
-# Entrada: montar PDFs en /data/in
-# Salida: resultados en /data/out
-# Caché: persistir modelos de manga-image-translator (OCR, inpainting, etc.)
-VOLUME ["/data/in", "/data/out", "/root/.cache/manga-image-translator"]
+# NAS Optimization: Mapear todo el caché de modelos pesados a /config
+# para que no se borren en cada actualización y puedan ser montados en el disco del NAS.
+VOLUME ["/app/data", "/config"]
 
-# Variables de entorno
+# Exponer el puerto para la interfaz web
+EXPOSE 8000
+
+# Variables de entorno crícticas para enrutar el caché fuera de /root (para OMV non-root)
 ENV DEEPSEEK_API_KEY=""
 ENV PYTHONUNBUFFERED=1
+ENV XDG_CACHE_HOME="/config/cache"
+ENV TORCH_HOME="/config/cache/torch"
+ENV HF_HOME="/config/cache/huggingface"
+ENV YOLO_CONFIG_DIR="/config/cache/yolo"
 
-# Punto de entrada
-ENTRYPOINT ["python", "-m", "src.orquestador"]
-CMD ["--help"]
+# Punto de entrada (Servidor Web)
+CMD ["uvicorn", "src.web_server:app", "--host", "0.0.0.0", "--port", "8000"]

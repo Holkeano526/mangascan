@@ -8,3 +8,8 @@ manga-image-translator
 
 # Para OpenVINO (Fase 7 opcional):
 # openvino>=2025.0.0
+
+# Backend Web
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9

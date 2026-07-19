@@ -59,6 +59,10 @@ def aplicar_traduccion(
     config.render.alignment = "center"
     config.render.direction = "h"
     
+    # Punto medio quirúrgico para textos pequeños/chinos dispersos (Sincronizado)
+    config.detector.text_threshold = 0.3
+    config.detector.box_threshold = 0.5
+    
     translator = MangaTranslator({"kernel_size": 3})
     
     async def process():
@@ -77,18 +81,17 @@ def aplicar_traduccion(
         
         # Inyectar traducciones desde el JSON
         bubbles = page_data.get('bubbles', [])
-        for region in ctx.text_regions:
+        for i, region in enumerate(ctx.text_regions):
             # Por defecto usamos el texto original si no hay traducción
             region.translation = region.text
             region.target_lang = "ESP"  # Asumimos español
             region._alignment = config.render.alignment
             region._direction = config.render.direction
 
-            # Buscar en las burbujas guardadas
+            # Buscar en las burbujas guardadas por ID (el orden de detección es determinista)
             for bubble in bubbles:
-                # Se asocia por el texto (o se podría usar el id o el box)
-                if bubble['src'] == region.text:
-                    if bubble['dst']:
+                if bubble.get('id') == i:
+                    if bubble.get('dst'):
                         region.translation = bubble['dst']
                     break
         

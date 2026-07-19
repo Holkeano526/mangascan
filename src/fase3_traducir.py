@@ -7,6 +7,7 @@ import json
 import re
 import requests
 import time
+import os
 from pathlib import Path
 from typing import Any
 import logging
@@ -22,9 +23,9 @@ SYSTEM_PROMPT = (
     "No añadas texto extra, ni explicaciones, ni comillas markdown."
 )
 
-# Endpoint de DeepSeek
-API_URL = "https://api.deepseek.com/chat/completions"
-MODELO = "deepseek-chat"  # DeepSeek V3 (su modelo más rápido actual)
+# Endpoint y Modelo de DeepSeek
+API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
+MODELO = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
 
 # Patrón para detectar caracteres asiáticos (kanji, hiragana, katakana, hanzi)
 PATRON_ASIATICO = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]')
