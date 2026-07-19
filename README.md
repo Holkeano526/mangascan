@@ -28,9 +28,13 @@ Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de 
 
 ---
 
-## 🐳 Instalación y Uso con Docker (Recomendado para NAS)
+## 🐳 Instalación Recomendada: Docker Desktop (Windows / Mac / NAS)
 
-El entorno contenedorizado garantiza que las dependencias conflictivas (como librerías de OpenCV y compiladores locales) no afecten tu sistema.
+Debido a que el motor de IA (`manga-image-translator`) utiliza librerías nativas antiguas y pesadas (PyTorch, numpy 1.26, OpenVINO, pydensecrf) que **carecen de instaladores pre-compilados para versiones recientes de Python (como 3.14)**, intentar ejecutar este proyecto de forma nativa en Windows o WSL a menudo resulta en errores catastróficos del compilador de Rust o C++.
+
+Para evitar dolores de cabeza, **la forma oficial y recomendada de usar MangaScan AI es a través de Docker Compose**. El contenedor ya incluye Python 3.11 pre-configurado y todas las dependencias compiladas.
+
+### Pasos con Docker Desktop (o Servidor Linux):
 
 1. **Clonar el repositorio:**
    ```bash
@@ -38,45 +42,36 @@ El entorno contenedorizado garantiza que las dependencias conflictivas (como lib
    cd traductor-manga
    ```
 
-2. **Construir la imagen de Docker:**
-   ```bash
-   docker build -t traductor-manga .
+2. **Configurar tu API Key:**
+   Abre el archivo `docker-compose.yml` y coloca tu clave de DeepSeek en la variable correspondiente:
+   ```yaml
+   environment:
+     - DEEPSEEK_API_KEY=sk-tu_api_key_aqui
    ```
 
-3. **Ejecutar el proceso:**
-   Suponiendo que tienes una carpeta de entrada en tu servidor con tus PDFs, puedes montar los volúmenes para que el sistema lea y escriba en tu disco:
+3. **Levantar el proyecto:**
+   Abre una terminal en la carpeta del proyecto y ejecuta:
    ```bash
-   docker run --rm \
-     -v /ruta/absoluta/a/tus/mangas/in:/data/in \
-     -v /ruta/absoluta/a/tus/mangas/out:/data/out \
-     -v /ruta/absoluta/cache/manga-translator:/root/.cache/manga-image-translator \
-     -e DEEPSEEK_API_KEY=tu_api_key_aqui \
-     traductor-manga /data/in/tomo_original.pdf --work-dir /data/out/tomo_traducido
+   docker compose up --build -d
    ```
-   > **Nota de caché:** Mapear el volumen `/root/.cache/manga-image-translator` es vital para que los modelos de Machine Learning para el OCR y el Inpainting (de varios gigabytes) solo se descarguen la primera vez y persistan entre ejecuciones.
+   *(Docker descargará todo el entorno, compilará las librerías necesarias de IA y lanzará el servidor en segundo plano).*
 
-### 🚀 Optimización Extrema para NAS (Procesadores Intel sin GPU dedicada)
-Si tu servidor o NAS tiene un procesador Intel moderno (ej. i5-1135G7) que no cuenta con tarjeta gráfica dedicada NVIDIA, puedes compilar una versión súper acelerada del proyecto usando el archivo alternativo `Dockerfile.nas`. 
+4. **¡A Traducir!**
+   Abre tu navegador web y entra a **[http://localhost:8000](http://localhost:8000)**. 
+   Verás la interfaz gráfica de MangaScan AI. Sube tu PDF, observa el progreso en tiempo real y descarga el resultado.
 
-Esta imagen reemplaza el motor base por **Intel OpenMP (MKL)**, ancla el procesamiento a los núcleos físicos reales de tu CPU (evitando los hilos virtuales) y exprime las instrucciones AVX-512 y la Caché L3 para que la Inferencia de la IA trabaje a máxima velocidad por software. 
-
-Para usar esta versión específica en tu NAS, compila con este comando:
-```bash
-docker build -t traductor-manga -f Dockerfile.nas .
-```
-*(El comando `docker run` posterior será exactamente el mismo).*
+> **💡 Nota sobre la Caché:** La configuración de `docker-compose.yml` ya está diseñada para guardar de forma permanente los gigabytes de modelos de IA en la carpeta `./config` de tu disco duro. Así no tendrás que volver a descargarlos cada vez que reinicies el contenedor.
 
 ---
 
-## 💻 Instalación y Uso Manual (Windows / WSL / Linux)
+## 💻 Instalación Local Avanzada (Bajo tu propio riesgo)
 
-Si prefieres ejecutarlo en tu propio entorno:
+Si eres un desarrollador avanzado usando **Linux nativo con Python 3.11 estrictamente** (No funciona bien en Windows nativo ni Python >=3.12 sin compilación manual cruzada):
 
 1. **Crear y activar el entorno virtual:**
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # En Linux/Mac o WSL
-   # o en Windows: venv\Scripts\activate
+   python3.11 -m venv venv
+   source venv/bin/activate
    ```
 
 2. **Instalar dependencias:**
@@ -84,14 +79,6 @@ Si prefieres ejecutarlo en tu propio entorno:
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
-   > **⚠️ NOTA SOBRE MANGA-IMAGE-TRANSLATOR:** Debido a fallos de empaquetado en el archivo `setup.cfg` original del autor de `manga-image-translator`, instalarlo vía pip (incluso usando la URL de git) omite subcarpetas críticas como `utils` y dependencias pesadas como `opencv-python`. 
-   > Para instalaciones manuales, **debes clonar su repositorio de GitHub manualmente** dentro de tu proyecto y configurar el PYTHONPATH:
-   > ```bash
-   > git clone https://github.com/zyddnys/manga-image-translator.git
-   > pip install -r manga-image-translator/requirements.txt
-   > export PYTHONPATH="${PWD}/manga-image-translator:${PYTHONPATH}"
-   > ```
-   > *(El entorno Docker ya maneja todo esto automáticamente en el Dockerfile).*
 
 3. **Configurar API Key:**
    Crea un archivo llamado `.env` en la **raíz del proyecto** (la misma carpeta donde está este README) con el siguiente contenido:
