@@ -175,3 +175,7 @@ El sistema de escaneo omite deliberadamente los **SFX (Efectos de sonido)** que 
 
 ---
 **Desarrollado para el procesamiento masivo y desatendido en servidores NAS y HomeLabs.**
+
+## Licencia
+
+Este proyecto se distribuye bajo la licencia **GNU General Public License v3.0 (GPL-3.0)**. Esto significa que cualquiera puede usar, modificar y distribuir el código libremente, siempre y cuando cualquier proyecto derivado también sea de código abierto bajo esta misma licencia. Consulta el archivo \LICENSE\ para más detalles.
