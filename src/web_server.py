@@ -21,6 +21,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+active_processes = {}
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open(STATIC_DIR / "index.html", "r", encoding="utf-8") as f:
@@ -67,11 +68,14 @@ def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path
             cwd=str(BASE_DIR)
         )
         
+        active_processes[task_id] = process
+        
         for line in iter(process.stdout.readline, ''):
             log_file.write(line)
             log_file.flush()
             
         process.wait()
+        active_processes.pop(task_id, None)
         log_file.write(f"\n[SYSTEM] Procesamiento finalizado con codigo: {process.returncode}\n")
 
 @app.get("/api/stream/{task_id}")
@@ -111,3 +115,17 @@ async def download_file(task_id: str, filename: str):
     if out_pdf_path.exists():
         return FileResponse(path=out_pdf_path, filename=f"traducido_{filename}", media_type='application/pdf')
     return {"error": "Archivo no encontrado o no terminado."}
+
+@app.post("/api/cancel/{task_id}")
+async def cancel_task(task_id: str):
+    if task_id in active_processes:
+        process = active_processes.pop(task_id)
+        process.kill()
+        
+        log_path = OUTPUT_DIR / f"{task_id}.log"
+        if log_path.exists():
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"\n[SYSTEM] Procesamiento cancelado por el usuario.\n")
+                
+        return {"status": "cancelled"}
+    return {"status": "not_found_or_finished"}

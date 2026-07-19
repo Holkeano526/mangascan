@@ -44,9 +44,23 @@ class TraductorMangaOptimizado:
     def _get_translator(self):
         """Retorna la instancia singleton de MangaTranslator."""
         if self._translator is None:
-            mt_src = Path(__file__).parent.parent / "manga-image-translator-src"
-            if str(mt_src.resolve()) not in sys.path:
-                sys.path.insert(0, str(mt_src.resolve()))
+            base_dir = Path(__file__).parent.parent
+            # Soportar entorno local (WSL/Windows) y entorno Docker NAS
+            mt_rutas = [
+                base_dir / "manga-image-translator-src",
+                base_dir / "manga-image-translator",
+                Path("/app/manga-image-translator")
+            ]
+            
+            for ruta in mt_rutas:
+                if ruta.exists():
+                    if str(ruta.resolve()) not in sys.path:
+                        sys.path.insert(0, str(ruta.resolve()))
+                    break
+
+            # Crear directorio de caché seguro si estamos en Docker
+            if Path("/config").exists():
+                Path("/config/models").mkdir(parents=True, exist_ok=True)
 
             from manga_translator import MangaTranslator
             logging.getLogger('manga_translator').setLevel(logging.ERROR)
@@ -75,6 +89,7 @@ class TraductorMangaOptimizado:
         else:
             cfg.translator.translator = "none"
             cfg.inpainter.inpainter = "default"
+            cfg.inpainter.inpainting_size = 1024  # LIMITE ESTRICTO DE MEMORIA RAM (NAS)
             cfg.render.renderer = "manga2eng_pillow"
             cfg.render.alignment = "center"
             cfg.render.direction = "h"
@@ -85,10 +100,11 @@ class TraductorMangaOptimizado:
         Pipeline completo para una página: detección → OCR → traducción → inpainting → render.
         Retorna la ruta de la imagen renderizada.
         """
+        translator = self._get_translator()
+        
         from manga_translator import Context
         from manga_translator.utils import load_image, dump_image
 
-        translator = self._get_translator()
         img = Image.open(img_path)
 
         # ── 1 y 2: Detección + OCR ────────────────────────────────────

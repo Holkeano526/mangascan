@@ -3,14 +3,12 @@ pymupdf>=1.25.0
 requests>=2.32.0
 Pillow>=11.0.0
 python-dotenv>=1.0.0
-opencv-python-headless>=4.8.0
-
-
-
-# Para OpenVINO (Fase 7 opcional):
-# openvino>=2025.0.0
 
 # Backend Web
 fastapi>=0.110.0
 uvicorn>=0.29.0
 python-multipart>=0.0.9
+
+# Dependencias completas del motor ML de Manga Translator
+opencv-python-headless>=4.8.0
+-r https://raw.githubusercontent.com/zyddnys/manga-image-translator/main/requirements.txt

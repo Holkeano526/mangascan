@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -22,6 +24,10 @@ RUN git clone https://github.com/zyddnys/manga-image-translator.git /app/manga-i
 
 # Configurar PYTHONPATH para que los scripts en src/ encuentren a manga_translator
 ENV PYTHONPATH="/app/manga-image-translator:${PYTHONPATH}"
+
+# Enrutar la carpeta models de manga_translator hacia /config para persistencia y permisos
+RUN rm -rf /app/manga-image-translator/models && \
+    ln -s /config/models /app/manga-image-translator/models
 
 # Copiar requirements de nuestra app primero para cachear capa de dependencias
 COPY requirements.txt .

@@ -1,3 +1,11 @@
+/* ═══════════════════════════════════════════
+   MangaScan AI — Premium Frontend Engine
+   ═══════════════════════════════════════════ */
+
+'use strict';
+
+// ─── DOM References ──────────────────────────
+
 const dropzone = document.getElementById('dropzone');
 const fileInput = document.getElementById('fileInput');
 const progressContainer = document.getElementById('progress-container');
@@ -6,11 +14,49 @@ const terminal = document.getElementById('terminal');
 const downloadBtn = document.getElementById('download-btn');
 const spinner = document.querySelector('.spinner');
 const progressBarFill = document.getElementById('progress-bar-fill');
+const progressBarBg = document.querySelector('.progress-bar-bg');
+const cancelBtn = document.getElementById('cancel-btn');
+const resetBtn = document.getElementById('reset-btn');
 
-// Click to select
+let currentTaskId = null;
+let currentEvtSource = null;
+
+// ─── Cursor Parallax on Background Orbs ──────
+
+(function initCursorParallax() {
+    const orbs = document.querySelectorAll('.orb-glow');
+    if (!orbs.length) return;
+
+    let mouseX = 0.5;
+    let mouseY = 0.5;
+
+    document.addEventListener('mousemove', (e) => {
+        mouseX = e.clientX / window.innerWidth;
+        mouseY = e.clientY / window.innerHeight;
+
+        orbs.forEach((orb, i) => {
+            const offset = (i + 1) * 15;
+            const x = (mouseX - 0.5) * offset;
+            const y = (mouseY - 0.5) * offset;
+            orb.style.transform = `translate(${x}px, ${y}px)`;
+        });
+    });
+})();
+
+// ─── Dropzone Click ──────────────────────────
+
 dropzone.addEventListener('click', () => fileInput.click());
 
-// Drag and drop handlers
+// Keyboard activation (Enter/Space)
+dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+    }
+});
+
+// ─── Drag & Drop Handlers ────────────────────
+
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
     dropzone.addEventListener(eventName, preventDefaults, false);
 });
@@ -21,11 +67,15 @@ function preventDefaults(e) {
 }
 
 ['dragenter', 'dragover'].forEach(eventName => {
-    dropzone.addEventListener(eventName, () => dropzone.classList.add('dragover'), false);
+    dropzone.addEventListener(eventName, () => {
+        dropzone.classList.add('dragover');
+    }, false);
 });
 
 ['dragleave', 'drop'].forEach(eventName => {
-    dropzone.addEventListener(eventName, () => dropzone.classList.remove('dragover'), false);
+    dropzone.addEventListener(eventName, () => {
+        dropzone.classList.remove('dragover');
+    }, false);
 });
 
 dropzone.addEventListener('drop', handleDrop, false);
@@ -33,104 +83,217 @@ fileInput.addEventListener('change', handleFiles, false);
 
 function handleDrop(e) {
     const dt = e.dataTransfer;
-    const files = dt.files;
-    handleFiles({ target: { files: files } });
+    handleFiles({ target: { files: dt.files } });
 }
+
+// ─── File Processing ─────────────────────────
 
 async function handleFiles(e) {
     const files = e.target.files;
-    if (files.length === 0) return;
-    
+    if (!files.length) return;
+
     const file = files[0];
-    if (file.type !== "application/pdf") {
-        alert("Por favor sube un archivo PDF.");
+    if (file.type !== 'application/pdf') {
+        appendLog('⚠️ Solo se aceptan archivos PDF.', 'warning');
         return;
     }
 
-    // Prepare UI
+    // Transition UI
     dropzone.classList.add('hidden');
     progressContainer.classList.remove('hidden');
     terminal.innerHTML = '';
     statusText.textContent = `Procesando: ${file.name}`;
+    spinner.style.display = 'block';
     progressBarFill.style.width = '0%';
-    
+    downloadBtn.classList.add('hidden');
+    resetBtn.classList.add('hidden');
+    updateProgressBarAria(0);
+
     // Upload
     const formData = new FormData();
     formData.append('file', file);
-    
-    appendLog(`[INFO] Subiendo archivo al NAS...`, 'info');
+
+    appendLog('📡 Subiendo archivo al NAS...', 'info');
 
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
             body: formData
         });
-        
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
-        
+
         if (data.task_id) {
-            appendLog(`[INFO] Archivo subido. ID Tarea: ${data.task_id}`, 'success');
+            currentTaskId = data.task_id;
+            cancelBtn.style.display = 'inline-flex';
+            appendLog(`✅ Archivo subido. ID Tarea: ${data.task_id}`, 'success');
             startLogStream(data.task_id, data.filename);
         } else {
-            appendLog(`[ERROR] Error al subir el archivo.`, 'error');
+            appendLog('❌ Error al subir el archivo.', 'error');
         }
     } catch (err) {
-        appendLog(`[ERROR] Error de red: ${err.message}`, 'error');
+        appendLog(`🚨 Error de red: ${err.message}`, 'error');
     }
 }
 
+// ─── Event Stream (SSE) ──────────────────────
+
 function startLogStream(taskId, filename) {
     const evtSource = new EventSource(`/api/stream/${taskId}`);
-    let totalPages = 1;
-    
-    evtSource.onmessage = function(event) {
-        const line = event.data;
-        appendLog(line);
-        
-        // Extraer progreso de paginas: "Página 5/63"
-        const pageMatch = line.match(/Página (\d+)\/(\d+)/);
+    currentEvtSource = evtSource;
+    let totalPages = 0;
+
+    evtSource.onmessage = function (event) {
+        const rawLine = event.data;
+        const parsed = parseLogLine(rawLine);
+        appendLog(parsed.text, parsed.type);
+
+        // Extract page progress: "Página 5/63"
+        const pageMatch = rawLine.match(/Página\s+(\d+)\s*\/\s*(\d+)/i);
         if (pageMatch) {
-            const current = parseInt(pageMatch[1]);
-            totalPages = parseInt(pageMatch[2]);
-            const percent = (current / totalPages) * 100;
+            const current = parseInt(pageMatch[1], 10);
+            totalPages = parseInt(pageMatch[2], 10);
+            const percent = Math.min((current / totalPages) * 100, 100);
             progressBarFill.style.width = `${percent}%`;
             statusText.textContent = `Traduciendo... ${current}/${totalPages}`;
+            updateProgressBarAria(percent);
         }
 
-        // Si terminó
-        if (line.includes('[SYSTEM] Procesamiento finalizado')) {
+        // System progress markers
+        if (rawLine.match(/(Procesando|Extrayendo|OCR|Analizando)/i)) {
+            progressBarFill.style.width = `${Math.min((progressBarFill.style.width ? parseFloat(progressBarFill.style.width) + 5 : 0), 85)}%`;
+        }
+
+        // Completion
+        if (rawLine.match(/Procesamiento\s+finalizado|Completado|PDF\s+listo/i)) {
             evtSource.close();
-            progressBarFill.style.width = `100%`;
-            statusText.textContent = "¡Traducción Completada!";
-            spinner.classList.add('hidden');
-            
-            // Setup download button
+            currentEvtSource = null;
+            cancelBtn.style.display = 'none';
+            progressBarFill.style.width = '100%';
+            updateProgressBarAria(100);
+            statusText.textContent = '🎉 ¡Traducción Completada!';
+            spinner.style.display = 'none';
+
             downloadBtn.href = `/api/download/${taskId}?filename=${encodeURIComponent(filename)}`;
-            downloadBtn.classList.remove('hidden');
+            downloadBtn.classList.remove('hidden', 'primary-btn');
             downloadBtn.classList.add('success-btn');
-            
-            appendLog(`[SUCCESS] PDF listo para descargar.`, 'success');
+            resetBtn.classList.remove('hidden');
+
+            appendLog('📥 PDF listo para descargar.', 'success');
         }
     };
-    
-    evtSource.onerror = function() {
+
+    evtSource.onerror = function () {
         evtSource.close();
-        appendLog(`[ERROR] Conexión al stream perdida.`, 'error');
+        currentEvtSource = null;
+        cancelBtn.style.display = 'none';
+        resetBtn.classList.remove('hidden');
+        appendLog('🔌 Conexión al stream perdida. Recarga la página para reintentar.', 'error');
     };
+
+    // Return the source so it can be closed externally if needed
+    return evtSource;
 }
+
+// ─── Cancel logic ────────────────────────────
+
+if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+        if (!currentTaskId) return;
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = 'Cancelando...';
+        try {
+            await fetch(`/api/cancel/${currentTaskId}`, { method: 'POST' });
+            if (currentEvtSource) {
+                currentEvtSource.close();
+                currentEvtSource = null;
+            }
+            appendLog('🛑 Proceso cancelado por el usuario.', 'warning');
+            statusText.textContent = 'Proceso cancelado';
+            spinner.style.display = 'none';
+            progressBarFill.style.width = '0%';
+            resetBtn.classList.remove('hidden');
+        } catch (err) {
+            appendLog('🚨 Error al cancelar el proceso.', 'error');
+        } finally {
+            cancelBtn.style.display = 'none';
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg> Cancelar`;
+        }
+    });
+}
+
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        progressContainer.classList.add('hidden');
+        dropzone.classList.remove('hidden');
+        fileInput.value = '';
+    });
+}
+
+// ─── Log Parser ──────────────────────────────
+
+function parseLogLine(raw) {
+    let text = raw;
+    let type = 'system';
+
+    // Strip common prefixes for cleaner display
+    text = text.replace(/^\[SYSTEM\]\s*/i, '');
+
+    if (/ERROR|FATAL|CRASH|EXCEPCIÓN|Error|🚨/i.test(raw)) {
+        type = 'error';
+    } else if (/WARN|ADVERTENCIA|⚠️/i.test(raw)) {
+        type = 'warning';
+    } else if (/SUCCESS|✅|finalizado|Completado|listo|📥/i.test(raw)) {
+        type = 'success';
+    } else if (/INFO|DEBUG|📡|ℹ️|🔍|📄/i.test(raw)) {
+        type = 'info';
+    }
+
+    // Enrich with contextual emojis if missing
+    if (!/^[📡✅❌🚨🔌🎉📥🔍📄ℹ️⚠️]/.test(text)) {
+        if (type === 'error') text = `🚨 ${text}`;
+        else if (type === 'warning') text = `⚠️ ${text}`;
+        else if (type === 'success') text = `✅ ${text}`;
+        else if (type === 'info') text = `ℹ️ ${text}`;
+    }
+
+    return { text, type };
+}
+
+// ─── Terminal Logger ─────────────────────────
 
 function appendLog(msg, type = '') {
     const div = document.createElement('div');
     div.textContent = msg;
     if (type) div.className = type;
-    
-    // Simple colorizing based on log level if no specific type passed
+
+    // Fallback colorizing if no explicit type
     if (!type) {
-        if (msg.includes('ERROR')) div.className = 'error';
-        else if (msg.includes('INFO') || msg.includes('DEBUG')) div.className = 'info';
-        else if (msg.includes('SUCCESS') || msg.includes('completada')) div.className = 'success';
+        if (/ERROR|🚨|FATAL/i.test(msg)) div.className = 'error';
+        else if (/WARN|⚠️|ADVERTENCIA/i.test(msg)) div.className = 'warning';
+        else if (/SUCCESS|✅|finalizado|Completado|listo|📥/i.test(msg)) div.className = 'success';
+        else if (/INFO|ℹ️|📡|🔍|📄|DEBUG/i.test(msg)) div.className = 'info';
     }
 
     terminal.appendChild(div);
-    terminal.scrollTop = terminal.scrollHeight; // Auto-scroll
+
+    // Smooth scroll to bottom
+    const container = terminal.closest('.terminal-container');
+    container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+    });
+}
+
+// ─── ARIA Progress Updater ───────────────────
+
+function updateProgressBarAria(percent) {
+    if (progressBarBg) {
+        progressBarBg.setAttribute('aria-valuenow', Math.round(percent));
+    }
 }
