@@ -2,13 +2,13 @@
 
 Una herramienta automatizada de código abierto para escanear, reconocer, traducir y renderizar mangas desde su idioma original (japonés) al español latino de forma desatendida. 
 
-Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de caracteres (OCR) ejecutado de forma 100% **local** (ideal para NAS o servidores con CPU o GPU integrada) con la poderosa y económica API de **DeepSeek V3** encargada exclusivamente de la traducción del texto.
+Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de caracteres (OCR) ejecutado de forma 100% **local** (ideal para NAS o servidores con CPU o GPU integrada) con la poderosa y económica API de **DeepSeek V4 Flash** encargada exclusivamente de la traducción del texto.
 
 ## Características Principales
 - **Extracción Inteligente:** Toma un archivo PDF (o una carpeta con imágenes) y lo prepara para traducción sin comprimirlo excesivamente.
 - **OCR Local:** Utiliza [manga-image-translator](https://github.com/zyddnys/manga-image-translator) para detectar los globos de diálogo y extraer el texto en japonés, sin costo de API.
 - **Inpainting Automático:** Limpia los globos de texto originales en la imagen, regenerando el fondo cuando el texto está encima de dibujos.
-- **Traducción Contextual con DeepSeek:** Envía todos los textos de una página a la vez al modelo `deepseek-chat` para que traduzca con el contexto completo, aplicando un tono de manga natural y coloquial. 
+- **Traducción Contextual con DeepSeek:** Envía todos los textos de una página a la vez al modelo `deepseek-v4-flash` para que traduzca con el contexto completo, aplicando un tono de manga natural y coloquial. 
 - **Validación Anti-Asiática Estricta:** Incorpora una capa de seguridad para rechazar y reintentar si el modelo intenta devolver caracteres asiáticos en la traducción.
 - **Renderizado Dinámico:** Redibuja el texto en español sobre la imagen ajustando la fuente.
 - **Ensamblaje a PDF:** Reconstruye la obra completa y genera un archivo final `_traducido.pdf` conservando la calidad de lectura original.
