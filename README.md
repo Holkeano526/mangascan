@@ -174,4 +174,4 @@ El `src/orquestador.py` organiza el proceso en 5 fases secuenciales ininterrumpi
 El sistema de escaneo omite deliberadamente los **SFX (Efectos de sonido)** que estén incrustados en el arte de manera orgánica, ya que la red neuronal de `manga-image-translator` se entrena sobre globos de texto convencionales. En estos casos, las onomatopeyas se mantienen intactas tal cual como la versión japonesa original.
 
 ---
-**Proyecto listo para producción (Escala de tomos pesados).**
+**Desarrollado para el procesamiento masivo y desatendido en servidores NAS y HomeLabs.**
