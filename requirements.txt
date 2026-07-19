@@ -5,7 +5,8 @@ Pillow>=11.0.0
 python-dotenv>=1.0.0
 
 # manga-image-translator - motor principal
-manga-image-translator
+git+https://github.com/zyddnys/manga-image-translator.git
+colorama
 
 # Para OpenVINO (Fase 7 opcional):
 # openvino>=2025.0.0
