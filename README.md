@@ -79,6 +79,14 @@ Si prefieres ejecutarlo en tu propio entorno:
    pip install --upgrade pip
    pip install -r requirements.txt
    ```
+   > **⚠️ NOTA SOBRE MANGA-IMAGE-TRANSLATOR:** Debido a fallos de empaquetado en el archivo `setup.cfg` original del autor de `manga-image-translator`, instalarlo vía pip (incluso usando la URL de git) omite subcarpetas críticas como `utils` y dependencias pesadas como `opencv-python`. 
+   > Para instalaciones manuales, **debes clonar su repositorio de GitHub manualmente** dentro de tu proyecto y configurar el PYTHONPATH:
+   > ```bash
+   > git clone https://github.com/zyddnys/manga-image-translator.git
+   > pip install -r manga-image-translator/requirements.txt
+   > export PYTHONPATH="${PWD}/manga-image-translator:${PYTHONPATH}"
+   > ```
+   > *(El entorno Docker ya maneja todo esto automáticamente en el Dockerfile).*
 
 3. **Configurar API Key:**
    Crea un archivo llamado `.env` en la **raíz del proyecto** (la misma carpeta donde está este README) con el siguiente contenido:
