@@ -3,10 +3,11 @@ pymupdf>=1.25.0
 requests>=2.32.0
 Pillow>=11.0.0
 python-dotenv>=1.0.0
+opencv-python-headless>=4.8.0
 
-# manga-image-translator - motor principal
+# manga-image-translator - dependencias directas
+-r https://raw.githubusercontent.com/zyddnys/manga-image-translator/main/requirements.txt
 git+https://github.com/zyddnys/manga-image-translator.git
-colorama
 
 # Para OpenVINO (Fase 7 opcional):
 # openvino>=2025.0.0
