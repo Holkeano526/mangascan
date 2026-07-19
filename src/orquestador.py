@@ -1,6 +1,6 @@
 """
 Orquestador — Despachador elegante de tareas asyncio.
-Usa el Pipeline Core (fase2_pipeline_core.py) que mantiene los modelos ML vivos.
+Usa el Pipeline Core (translator_engine.py) que mantiene los modelos ML vivos.
 """
 import asyncio
 import json
@@ -12,9 +12,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .fase1_pdf_a_imagenes import pdf_a_imagenes
-from .fase5_imagenes_a_pdf import imagenes_a_pdf
-from .fase2_pipeline_core import TraductorMangaOptimizado
+from .pdf_extractor import pdf_a_imagenes
+from .pdf_builder import imagenes_a_pdf
+from .translator_engine import TraductorMangaOptimizado
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ async def procesar_tomo_async(
     logger.info(f"Work dir: {work_dir}")
     logger.info(f"{'='*60}")
 
-    # ── Fase 1: PDF → imágenes ─────────────────────────────────────────
+    # ── Extracción: PDF → imágenes ─────────────────────────────────────────
     if pdf_path.is_dir():
         logger.info("Carpeta de imágenes, saltando extracción PDF")
         imgs = []
@@ -75,7 +75,7 @@ async def procesar_tomo_async(
     if not imgs:
         raise RuntimeError("No se extrajeron imágenes del PDF o carpeta.")
 
-    # ── Fases 2-4: Pipeline core (una instancia de modelo para todo) ───
+    # ── Traducción: Pipeline core (una instancia de modelo para todo) ───
     pipeline = TraductorMangaOptimizado(api_key, font_size_min)
     fallos = []
 
@@ -96,7 +96,7 @@ async def procesar_tomo_async(
             # Fallback: copiar raw como render
             shutil.copy2(img_path, render_img)
 
-    # ── Fase 5: PDF final ──────────────────────────────────────────────
+    # ── Ensamblaje: PDF final ──────────────────────────────────────────────
     logger.info("\n--- Generando PDF ---")
     pdf_final = imagenes_a_pdf(render_dir, salida_pdf)
 

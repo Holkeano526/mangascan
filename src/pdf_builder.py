@@ -1,5 +1,5 @@
 """
-Fase 5 — Salida a PDF
+Módulo Ensamblador — Salida a PDF
 Recompone las imágenes traducidas a un PDF final.
 """
 

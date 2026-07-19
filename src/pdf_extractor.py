@@ -1,6 +1,6 @@
 """
-Fase 1 — Ingesta del PDF
-PDF → imágenes por página (200–300 DPI)
+Módulo Extractor — Ingesta del PDF
+Convierte un PDF completo en imágenes por página (200-300 DPI) preparadas para el OCR.
 """
 
 import fitz  # PyMuPDF
