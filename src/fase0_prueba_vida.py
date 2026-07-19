@@ -33,9 +33,8 @@ def prueba_rapida(
     Returns:
         Dict con resultados de la prueba.
     """
-    from .fase1_pdf_a_imagenes import pdf_a_imagenes
-    from .fase2_detectar_ocr import detectar_y_ocr
-    from .fase3_traducir import traducir_pagina
+    import asyncio
+    from .fase2_pipeline_core import TraductorMangaOptimizado
 
     resultados = {
         "manga_translator_instalado": False,
@@ -46,58 +45,43 @@ def prueba_rapida(
     }
 
     logger.info("Verificando instalación de manga-image-translator...")
-    import subprocess
-    cmd_list = [sys.executable, "-m", "manga_translator"]
-    try:
-        result = subprocess.run(
-            cmd_list + ["local", "--help"],
-            capture_output=True, text=True, encoding='utf-8', timeout=30,
-            cwd=str(Path(__file__).parent.parent / "manga-image-translator-src")
-        )
-        if result.returncode == 0:
-            resultados["manga_translator_instalado"] = True
-            logger.info("✓ manga-image-translator instalado")
-        else:
-            logger.warning(f"⚠ manga-image-translator devolvió código {result.returncode}")
-            logger.info(f"Salida: {result.stdout[:200]}")
-    except FileNotFoundError:
-        logger.error(
-            f"✗ manga-image-translator NO encontrado como '{manga_translator_cmd}'.\n"
-            "  Instálalo con: pip install manga-image-translator\n"
-            "  O revisa su documentación en github.com/zyddnys/manga-image-translator"
-        )
+    mt_src = Path(__file__).parent.parent / "manga-image-translator-src"
+    if mt_src.exists():
+        resultados["manga_translator_instalado"] = True
+        logger.info("✓ manga-image-translator código fuente encontrado")
+    else:
+        logger.error(f"✗ manga-image-translator NO encontrado en {mt_src}")
         resultados["errores"].append("manga-image-translator no instalado")
         return resultados
 
-    # 2. Probar OCR con las imágenes
-    logger.info(f"\nProbando OCR con {len(imagenes_prueba)} imágenes...")
-    for img_path in imagenes_prueba:
-        img = Path(img_path)
-        if not img.exists():
-            logger.warning(f"  Imagen no encontrada: {img}, saltando")
-            continue
+    # 2. Probar Pipeline
+    logger.info(f"\nProbando Pipeline con {len(imagenes_prueba)} imágenes...")
+    
+    async def correr_prueba():
+        pipeline = TraductorMangaOptimizado(api_key=api_key or "DUMMY_KEY")
+        for img_path in imagenes_prueba:
+            img = Path(img_path)
+            if not img.exists():
+                logger.warning(f"  Imagen no encontrada: {img}, saltando")
+                continue
 
-        logger.info(f"  Procesando: {img.name}")
-        inicio = time.time()
+            logger.info(f"  Procesando: {img.name}")
+            inicio = time.time()
 
-        try:
-            work_dir = img.parent / "_fase0_prueba"
-            page_data = detectar_y_ocr(img, work_dir, manga_translator_cmd)
+            try:
+                # El pipeline genera los archivos de salida en render/
+                output_img = await pipeline.procesar_pagina(img)
+                tiempo = time.time() - inicio
+                
+                if output_img and output_img.exists():
+                    resultados["ocr_funciona"] = True
+                    resultados["traduccion_funciona"] = True
+                    logger.info(f"    ✓ Traducción end-to-end exitosa en {tiempo:.1f}s")
+                    logger.info(f"      Imagen generada en: {output_img}")
+                else:
+                    logger.warning(f"    ⚠ No se generó la imagen de salida para {img.name}")
 
-            tiempo = time.time() - inicio
-            
-            # Since manga-image-translator no longer exports JSON natively in this version,
-            # we verify success by checking if the output image was generated.
-            render_dir = work_dir / "render"
-            output_img = render_dir / img.name
-            if output_img.exists():
-                resultados["ocr_funciona"] = True
-                logger.info(f"    ✓ Traducción end-to-end exitosa en {tiempo:.1f}s")
-                logger.info(f"      Imagen generada en: {output_img}")
-            else:
-                logger.warning(f"    ⚠ No se generó la imagen de salida para {img.name}")
-
-            # Agregar tiempo a resultados
+                # Agregar tiempo a resultados
             resultados["tiempo_por_pagina"].append({
                 "imagen": img.name,
                 "tiempo_segundos": round(tiempo, 1),
@@ -108,32 +92,8 @@ def prueba_rapida(
             logger.error(f"    ✗ Error en OCR para {img.name}: {e}")
             resultados["errores"].append(f"OCR falló en {img.name}: {e}")
 
-    # 3. Probar traducción (si hay API key)
-    if api_key and resultados["ocr_funciona"]:
-        logger.info("\nProbando traducción con DeepSeek...")
-        try:
-            # Usar el primer JSON generado
-            work_dir = Path(imagenes_prueba[0]).parent / "_fase0_prueba"
-            jsons = list((work_dir / "jsons").glob("*.json"))
-            if jsons:
-                import json
-                with open(jsons[0], "r", encoding="utf-8") as f:
-                    page_data = json.load(f)
-                if page_data.get("bubbles"):
-                    traducciones = traducir_pagina(page_data["bubbles"], api_key)
-                    resultados["traduccion_funciona"] = True
-                    logger.info(f"  ✓ Traducción exitosa: {len(traducciones)} textos")
-                    for id_str, txt in list(traducciones.items())[:3]:
-                        original = next(
-                            (b["src"] for b in page_data["bubbles"] if str(b["id"]) == id_str),
-                            "?"
-                        )
-                        logger.info(f"    {original} → {txt}")
-        except Exception as e:
-            logger.error(f"  ✗ Error en traducción: {e}")
-            resultados["errores"].append(f"Traducción falló: {e}")
-    elif not api_key:
-        logger.info("\n⚠ Sin API key: saltando prueba de traducción")
+    # Ejecutar la prueba asíncrona
+    asyncio.run(correr_prueba())
 
     # 4. Reporte final
     logger.info(f"\n{'='*50}")
