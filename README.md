@@ -13,7 +13,7 @@ Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de 
 - **Extracción Inteligente:** Toma un archivo PDF (o una carpeta con imágenes) y lo prepara para traducción sin comprimirlo excesivamente.
 - **OCR Local:** Utiliza [manga-image-translator](https://github.com/zyddnys/manga-image-translator) para detectar los globos de diálogo y extraer el texto en japonés, sin costo de API.
 - **Inpainting Automático:** Limpia los globos de texto originales en la imagen, regenerando el fondo cuando el texto está encima de dibujos.
-- **Traducción Contextual con DeepSeek:** Envía todos los textos de una página a la vez al modelo `deepseek-v4-flash` para que traduzca con el contexto completo, aplicando un tono de manga natural y coloquial. 
+- **Traducción Contextual:** Envía todos los textos de una página a la vez al modelo elegido (por defecto `deepseek-v4-flash`) para que traduzca con el contexto completo, aplicando un tono de manga natural y coloquial. Es **compatible con cualquier IA que soporte la API de OpenAI** (Anthropic, Gemini, Llama local, etc).
 - **Validación Anti-Asiática Estricta:** Incorpora una capa de seguridad para rechazar y reintentar si el modelo intenta devolver caracteres asiáticos en la traducción.
 - **Renderizado Dinámico:** Redibuja el texto en español sobre la imagen ajustando la fuente.
 - **Ensamblaje a PDF:** Reconstruye la obra completa y genera un archivo final `_traducido.pdf` conservando la calidad de lectura original.
@@ -139,7 +139,11 @@ Si eres un desarrollador avanzado usando **Linux nativo con Python 3.11 estricta
 
 ## Uso (Web App Premium)
 
-El sistema ahora cuenta con una interfaz web alojada localmente, con animaciones fluidas, seguimiento en tiempo real y descarga directa.
+El sistema ahora cuenta con una **interfaz web premium y responsiva** alojada localmente, que incluye:
+- Animaciones fluidas, modo oscuro y diseño de cristal (Glassmorphism).
+- Botón de cancelación inmediata para interrumpir la subida de archivos grandes.
+- Modal de confirmación para pre-visualizar el archivo y activar el **Modo Rápido** (Fast Mode) que desactiva el redibujado de cajas, acelerando enormemente el proceso.
+- Seguimiento en tiempo real con consola integrada y barra de progreso.
 
 ### 1. Arrancar el Servidor
 Activa tu entorno virtual y arranca el backend de FastAPI:
@@ -171,8 +175,22 @@ Accede a `http://IP_DE_TU_NAS:8000` y listo.
 
 ## 🛠️ Personalización Avanzada
 
+### Usar otras Inteligencias Artificiales (Anthropic, Gemini, OpenAI, Locales)
+MangaScan AI está diseñado utilizando la estructura estándar de mensajes de OpenAI. Esto significa que **puedes usar prácticamente cualquier otra IA del mercado** simplemente apuntando la URL base hacia otro proveedor.
+
+Para hacerlo, modifica las siguientes variables de entorno (ya sea en tu `.env` o en el `docker-compose.yml`):
+```env
+# Por defecto es "https://api.deepseek.com/chat/completions"
+DEEPSEEK_API_URL="https://api.openai.com/v1/chat/completions"
+# Coloca aquí tu clave del nuevo proveedor
+DEEPSEEK_API_KEY="sk-tu_nueva_clave"
+# El nombre exacto del modelo que vayas a usar
+DEEPSEEK_MODEL="gpt-4o-mini"
+```
+*(Nota: Si usas servidores locales como LM Studio o Ollama, tu URL sería algo como `http://localhost:1234/v1/chat/completions`)*
+
 ### Modificar el Prompt de la Inteligencia Artificial
-El comportamiento de DeepSeek (tono, estilo y reglas de traducción) puede ser modificado a tu gusto editando el archivo `src/fase3_traducir.py`. Busca la sección `PROMPT_SISTEMA` y ajusta las instrucciones para que el modelo hable de manera más formal, use jerga específica o mantenga honoríficos japoneses.
+El comportamiento del modelo (tono, estilo y reglas de traducción) puede ser modificado a tu gusto editando el archivo `src/translator_engine.py`. Busca la constante `SYSTEM_PROMPT` y ajusta las instrucciones para que el modelo hable de manera más formal, use jerga específica o mantenga honoríficos japoneses.
 
 ### Configuración de Globos de Texto (Sensibilidad)
 Por defecto, el sistema viene configurado con un "Punto Medio" quirúrgico para encontrar textos en burbujas inusuales (como formas hexagonales) y textos dispersos. Si notas que ignora textos muy claros o une párrafos que no debería, puedes modificar los umbrales de detección. 

@@ -20,6 +20,7 @@ const resetBtn = document.getElementById('reset-btn');
 
 let currentTaskId = null;
 let currentEvtSource = null;
+let uploadAbortController = null;
 
 // ─── Cursor Parallax on Background Orbs ──────
 
@@ -88,6 +89,8 @@ function handleDrop(e) {
 
 // ─── File Processing ─────────────────────────
 
+let pendingFile = null;
+
 async function handleFiles(e) {
     const files = e.target.files;
     if (!files.length) return;
@@ -98,8 +101,28 @@ async function handleFiles(e) {
         return;
     }
 
-    // Transition UI
+    pendingFile = file;
+
+    // Transition UI to confirmation
     dropzone.classList.add('hidden');
+    document.getElementById('confirmation-container').classList.remove('hidden');
+    document.getElementById('selected-filename').textContent = file.name;
+}
+
+document.getElementById('cancel-upload-btn')?.addEventListener('click', () => {
+    pendingFile = null;
+    document.getElementById('confirmation-container').classList.add('hidden');
+    dropzone.classList.remove('hidden');
+    fileInput.value = '';
+});
+
+document.getElementById('start-upload-btn')?.addEventListener('click', async () => {
+    if (!pendingFile) return;
+    const file = pendingFile;
+    pendingFile = null;
+
+    // Transition UI to progress
+    document.getElementById('confirmation-container').classList.add('hidden');
     progressContainer.classList.remove('hidden');
     terminal.innerHTML = '';
     statusText.textContent = `Procesando: ${file.name}`;
@@ -112,13 +135,33 @@ async function handleFiles(e) {
     // Upload
     const formData = new FormData();
     formData.append('file', file);
+    
+    const fastModeToggle = document.getElementById('fastModeToggle');
+    if (fastModeToggle) {
+        formData.append('fast_mode', fastModeToggle.checked ? 'true' : 'false');
+    }
 
+    cancelBtn.style.display = 'inline-flex';
+    cancelBtn.disabled = false;
+    cancelBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="15" y1="9" x2="9" y2="15"></line>
+            <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+        Cancelar
+    `;
+
+    appendLog('📡 Iniciando conexión...', 'system');
     appendLog('📡 Subiendo archivo al NAS...', 'info');
+
+    uploadAbortController = new AbortController();
 
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: uploadAbortController.signal
         });
 
         if (!response.ok) {
@@ -129,15 +172,47 @@ async function handleFiles(e) {
 
         if (data.task_id) {
             currentTaskId = data.task_id;
-            cancelBtn.style.display = 'inline-flex';
             appendLog(`✅ Archivo subido. ID Tarea: ${data.task_id}`, 'success');
             startLogStream(data.task_id, data.filename);
         } else {
             appendLog('❌ Error al subir el archivo.', 'error');
+            cancelBtn.style.display = 'none';
         }
     } catch (err) {
-        appendLog(`🚨 Error de red: ${err.message}`, 'error');
+        if (err.name === 'AbortError') {
+            appendLog('🛑 Subida cancelada por el usuario.', 'warning');
+        } else {
+            appendLog(`🚨 Error de red: ${err.message}`, 'error');
+        }
+        cancelBtn.style.display = 'none';
+    } finally {
+        uploadAbortController = null;
     }
+});
+
+
+// ─── Helpers ─────────────────────────────────────
+
+function appendLog(msg, type = '') {
+    const div = document.createElement('div');
+    div.textContent = msg;
+    if (type) div.className = type;
+    terminal.appendChild(div);
+    terminal.parentElement.scrollTop = terminal.parentElement.scrollHeight;
+}
+
+function parseLogLine(raw) {
+    let type = '';
+    let text = raw.trim();
+
+    if (text.includes('[INFO]')) type = 'info';
+    else if (text.includes('[WARNING]') || text.includes('[WARN]')) type = 'warning';
+    else if (text.includes('[ERROR]') || text.includes('[FATAL]')) type = 'error';
+    else if (text.includes('[DEBUG]')) type = 'system';
+    else if (text.includes('[SUCCESS]')) type = 'success';
+    
+    text = text.replace(/\[(INFO|WARNING|WARN|ERROR|FATAL|DEBUG|SUCCESS)\]\s*/i, '');
+    return { text, type };
 }
 
 // ─── Event Stream (SSE) ──────────────────────
@@ -164,7 +239,7 @@ function startLogStream(taskId, filename) {
         }
 
         // System progress markers
-        if (rawLine.match(/(Procesando|Extrayendo|OCR|Analizando)/i)) {
+        if (rawLine.match(/(Procesando|Extrayendo|OCR|Analizando|Fase A|Fase B)/i)) {
             progressBarFill.style.width = `${Math.min((progressBarFill.style.width ? parseFloat(progressBarFill.style.width) + 5 : 0), 85)}%`;
         }
 
@@ -177,6 +252,12 @@ function startLogStream(taskId, filename) {
             updateProgressBarAria(100);
             statusText.textContent = '🎉 ¡Traducción Completada!';
             spinner.style.display = 'none';
+
+            // Hide terminal and show premium success banner
+            const terminalWrapper = document.getElementById('terminal-wrapper');
+            const successBanner = document.getElementById('success-banner');
+            if (terminalWrapper) terminalWrapper.style.display = 'none';
+            if (successBanner) successBanner.classList.remove('hidden');
 
             downloadBtn.href = `/api/download/${taskId}?filename=${encodeURIComponent(filename)}`;
             downloadBtn.classList.remove('hidden', 'primary-btn');
@@ -203,27 +284,44 @@ function startLogStream(taskId, filename) {
 
 if (cancelBtn) {
     cancelBtn.addEventListener('click', async () => {
-        if (!currentTaskId) return;
         cancelBtn.disabled = true;
         cancelBtn.innerHTML = 'Cancelando...';
-        try {
-            await fetch(`/api/cancel/${currentTaskId}`, { method: 'POST' });
-            if (currentEvtSource) {
-                currentEvtSource.close();
-                currentEvtSource = null;
-            }
-            appendLog('🛑 Proceso cancelado por el usuario.', 'warning');
-            statusText.textContent = 'Proceso cancelado';
-            spinner.style.display = 'none';
-            progressBarFill.style.width = '0%';
-            resetBtn.classList.remove('hidden');
-        } catch (err) {
-            appendLog('🚨 Error al cancelar el proceso.', 'error');
-        } finally {
-            cancelBtn.style.display = 'none';
-            cancelBtn.disabled = false;
-            cancelBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg> Cancelar`;
+        
+        // Cancelar subida en progreso si la hay
+        if (uploadAbortController) {
+            uploadAbortController.abort();
+            uploadAbortController = null;
         }
+
+        // Cancelar tarea en el backend si ya se creó
+        if (currentTaskId) {
+            try {
+                await fetch(`/api/cancel/${currentTaskId}`, { method: 'POST' });
+                if (currentEvtSource) {
+                    currentEvtSource.close();
+                    currentEvtSource = null;
+                }
+                appendLog('🛑 Proceso cancelado por el usuario en el backend.', 'warning');
+            } catch(e) {
+                console.error(e);
+            }
+        }
+        
+        statusText.textContent = 'Proceso cancelado';
+        spinner.style.display = 'none';
+        progressBarFill.style.width = '0%';
+        resetBtn.classList.remove('hidden');
+        cancelBtn.style.display = 'none';
+        cancelBtn.disabled = false;
+        cancelBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+            </svg>
+            Cancelar
+        `;
+        currentTaskId = null;
     });
 }
 
@@ -232,6 +330,14 @@ if (resetBtn) {
         progressContainer.classList.add('hidden');
         dropzone.classList.remove('hidden');
         fileInput.value = '';
+        
+        // Reset completion UI
+        const terminalWrapper = document.getElementById('terminal-wrapper');
+        const successBanner = document.getElementById('success-banner');
+        if (terminalWrapper) terminalWrapper.style.display = 'block';
+        if (successBanner) successBanner.classList.add('hidden');
+        statusText.textContent = 'Procesando...';
+        progressBarFill.style.width = '0%';
     });
 }
 
@@ -265,35 +371,11 @@ function parseLogLine(raw) {
     return { text, type };
 }
 
-// ─── Terminal Logger ─────────────────────────
 
-function appendLog(msg, type = '') {
-    const div = document.createElement('div');
-    div.textContent = msg;
-    if (type) div.className = type;
-
-    // Fallback colorizing if no explicit type
-    if (!type) {
-        if (/ERROR|🚨|FATAL/i.test(msg)) div.className = 'error';
-        else if (/WARN|⚠️|ADVERTENCIA/i.test(msg)) div.className = 'warning';
-        else if (/SUCCESS|✅|finalizado|Completado|listo|📥/i.test(msg)) div.className = 'success';
-        else if (/INFO|ℹ️|📡|🔍|📄|DEBUG/i.test(msg)) div.className = 'info';
-    }
-
-    terminal.appendChild(div);
-
-    // Smooth scroll to bottom
-    const container = terminal.closest('.terminal-container');
-    container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'smooth'
-    });
-}
-
-// ─── ARIA Progress Updater ───────────────────
 
 function updateProgressBarAria(percent) {
     if (progressBarBg) {
         progressBarBg.setAttribute('aria-valuenow', Math.round(percent));
     }
 }
+

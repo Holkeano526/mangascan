@@ -3,7 +3,7 @@ import uuid
 import subprocess
 import asyncio
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -22,13 +22,42 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 active_processes = {}
+job_queue = asyncio.Queue()
+
+async def queue_worker():
+    while True:
+        task = await job_queue.get()
+        task_id, file_path, log_path, out_pdf_path, fast_mode = task
+        
+        try:
+            # Escribir en log posiciÃ³n inicial (procesando)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n[SYSTEM] Iniciando procesamiento de la tarea...\n")
+                
+            await asyncio.to_thread(
+                run_orchestrator, task_id, file_path, log_path, out_pdf_path, fast_mode
+            )
+        except Exception as e:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"\n[SYSTEM] Error en el worker: {e}\n")
+        finally:
+            job_queue.task_done()
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(queue_worker())
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open(STATIC_DIR / "index.html", "r", encoding="utf-8") as f:
         return f.read()
 
 @app.post("/api/upload")
-async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_file(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...),
+    fast_mode: bool = Form(False)
+):
     task_id = str(uuid.uuid4())[:8]
     # Limpiamos el nombre del archivo para la shell
     safe_filename = file.filename.replace("'", "").replace('"', "")
@@ -39,13 +68,17 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
         
     log_path = OUTPUT_DIR / f"{task_id}.log"
     out_pdf_path = OUTPUT_DIR / task_id / f"translated_{safe_filename}"
-    
-    # Launch background task
-    background_tasks.add_task(run_orchestrator, task_id, file_path, log_path, out_pdf_path)
+    # Enviar trabajo a la cola
+    posicion = job_queue.qsize() + 1
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(f"[SYSTEM] Archivo recibido. PosiciÃ³n en cola: {posicion}\n")
+        f.write("[SYSTEM] Esperando recursos del sistema...\n")
+        
+    await job_queue.put((task_id, file_path, log_path, out_pdf_path, fast_mode))
     
     return {"task_id": task_id, "filename": safe_filename}
 
-def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path: Path):
+def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path: Path, fast_mode: bool = False):
     work_dir = OUTPUT_DIR / task_id
     
     import sys
@@ -57,8 +90,10 @@ def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path
         "--output", out_pdf_path.as_posix(),
         "-v"
     ]
+    if fast_mode:
+        cmd.append("--fast")
     
-    with open(log_path, "w", encoding="utf-8") as log_file:
+    with open(log_path, "a", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -129,3 +164,4 @@ async def cancel_task(task_id: str):
                 
         return {"status": "cancelled"}
     return {"status": "not_found_or_finished"}
+

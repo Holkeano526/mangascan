@@ -26,6 +26,7 @@ SYSTEM_PROMPT = (
     "Actúa como un traductor profesional de manga. Tu objetivo es traducir los siguientes textos al ESPAÑOL LATINO.\n"
     "REGLA DE ORO: La respuesta DEBE estar completamente en idioma ESPAÑOL.\n"
     "Está ESTRICTAMENTE PROHIBIDO incluir caracteres kanji, hiragana, katakana o caracteres chinos (hanzi) en tus traducciones.\n"
+    "IMPORTANTE: Como a menudo no hay contexto visual, si el género de quien habla es ambiguo, utiliza LENGUAJE NEUTRO o evita adjetivos con género marcado (ej. 'me tranquilizo' en lugar de 'estoy tranquilo').\n"
     "Debes traducir cada frase, adaptando las expresiones al contexto.\n"
     "Devuelve ÚNICAMENTE un JSON válido con este formato exacto: {\"0\": \"texto en español\", \"1\": \"texto en español\"}\n"
     "No añadas texto extra, ni explicaciones, ni comillas markdown."
@@ -58,6 +59,9 @@ class TraductorMangaOptimizado:
                         sys.path.insert(0, str(ruta.resolve()))
                     break
 
+            # Caché de contextos para Etapa 3 (Human-in-the-Loop)
+            self.contexts = {}
+
             # Crear directorio de caché seguro si estamos en Docker
             if Path("/config").exists():
                 Path("/config/models").mkdir(parents=True, exist_ok=True)
@@ -68,7 +72,7 @@ class TraductorMangaOptimizado:
             logger.info("MangaTranslator instanciado (singleton)")
         return self._translator
 
-    def _get_config(self, mode: str = "full"):
+    def _get_config(self, mode: str = "full", fast_mode: bool = False):
         """Config con thresholds sincronizados. mode='detect' salta traducción/inpainting."""
         from manga_translator import Config
 
@@ -88,30 +92,23 @@ class TraductorMangaOptimizado:
             cfg.upscale.upscaler = "none"
         else:
             cfg.translator.translator = "none"
-            cfg.inpainter.inpainter = "default"
+            cfg.inpainter.inpainter = "none" if fast_mode else "default"
             cfg.inpainter.inpainting_size = 1024  # LIMITE ESTRICTO DE MEMORIA RAM (NAS)
             cfg.render.renderer = "manga2eng_pillow"
             cfg.render.alignment = "center"
             cfg.render.direction = "h"
         return cfg
 
-    async def procesar_pagina(self, img_path: Path) -> Path:
-        """
-        Pipeline completo para una página: detección → OCR → traducción → inpainting → render.
-        Retorna la ruta de la imagen renderizada.
-        """
+    async def preparar_pagina(self, img_path: Path, fast_mode: bool = False) -> dict:
+        """Fase A: Detección, OCR y Traducción. Retorna los textos propuestos."""
         translator = self._get_translator()
-        
         from manga_translator import Context
-        from manga_translator.utils import load_image, dump_image
+        from manga_translator.utils import load_image
 
         img = Image.open(img_path)
-
-        # ── 1 y 2: Detección + OCR ────────────────────────────────────
-        cfg_detect = self._get_config("detect")
+        cfg_detect = self._get_config("detect", fast_mode=fast_mode)
         ctx = Context()
         ctx.input = img
-        ctx.result = None
         ctx.upscaled = img
         ctx.img_colorized = img
         ctx.img_rgb, ctx.img_alpha = load_image(ctx.upscaled)
@@ -120,27 +117,46 @@ class TraductorMangaOptimizado:
         ctx.textlines = await translator._run_ocr(cfg_detect, ctx)
         ctx.text_regions = await translator._run_textline_merge(cfg_detect, ctx)
 
+        bubbles = []
         if not ctx.text_regions:
             logger.warning(f"  ⚠ Sin texto detectado en {img_path.name}")
-            # Devolver imagen original como render
-            render_dir = img_path.parent.parent / "render"
-            render_dir.mkdir(parents=True, exist_ok=True)
-            dest = render_dir / f"{img_path.stem}_es{img_path.suffix}"
-            img.save(dest)
-            return dest
+        else:
+            for i, region in enumerate(ctx.text_regions):
+                bubbles.append({"id": i, "src": region.text})
 
-        # ── 3: Traducción DeepSeek (síncrona, en asyncio executor) ────
-        bubbles = []
-        for i, region in enumerate(ctx.text_regions):
-            x, y, w, h = region.xywh
-            bubbles.append({"id": i, "src": region.text})
+            traducciones = await self._traducir_pagina_async(bubbles)
+            for b in bubbles:
+                b["translation"] = traducciones.get(str(b["id"]), b["src"])
 
-        traducciones = await self._traducir_pagina_async(bubbles)
+        # Liberar memoria pesada (las imágenes) para no saturar RAM en pausas largas
+        ctx.input = None
+        ctx.upscaled = None
+        ctx.img_colorized = None
+        ctx.img_rgb = None
+        ctx.img_alpha = None
+        
+        self.contexts[img_path.name] = ctx
+        return {"pagina": img_path.name, "bubbles": bubbles}
 
-        # ── 4: Inpainting + Render ────────────────────────────────────
-        cfg_full = self._get_config("full")
-        for i, region in enumerate(ctx.text_regions):
-            region.translation = traducciones.get(str(i), region.text)
+    async def renderizar_pagina(self, img_path: Path, traducciones_editadas: dict[str, str], fast_mode: bool = False) -> Path:
+        """Fase B: Inpainting y Renderizado final."""
+        translator = self._get_translator()
+        from manga_translator.utils import dump_image, load_image
+        
+        ctx = self.contexts.get(img_path.name)
+        if not ctx:
+            raise ValueError(f"Contexto no encontrado para {img_path.name}. ¿Se saltó la fase A?")
+            
+        # Rehidratar imágenes
+        img = Image.open(img_path)
+        ctx.input = img
+        ctx.upscaled = img
+        ctx.img_colorized = img
+        ctx.img_rgb, ctx.img_alpha = load_image(ctx.upscaled)
+
+        cfg_full = self._get_config("full", fast_mode=fast_mode)
+        for i, region in enumerate(ctx.text_regions or []):
+            region.translation = traducciones_editadas.get(str(i), region.text)
             region.target_lang = "ESP"
             region._alignment = cfg_full.render.alignment
             region._direction = cfg_full.render.direction
@@ -158,6 +174,10 @@ class TraductorMangaOptimizado:
         if dest.suffix.lower() in ('.jpg', '.jpeg'):
             result_img = result_img.convert('RGB')
         result_img.save(dest)
+        
+        # Limpiar contexto de la memoria
+        del self.contexts[img_path.name]
+        
         logger.info(f"  ✓ Render: {img_path.name} → {dest.name}")
         return dest
 

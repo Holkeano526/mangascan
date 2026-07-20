@@ -15,7 +15,7 @@ services:
       # Zona horaria
       - TZ=America/Bogota
       # Tu clave de DeepSeek
-      - DEEPSEEK_API_KEY=sk-
+      - DEEPSEEK_API_KEY=
     volumes:
       # Datos de entrada (PDFs a subir) y salida (Traducciones y logs temporales)
       - ./data:/app/data

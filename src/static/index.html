@@ -15,7 +15,7 @@
         rel="stylesheet">
 
     <!-- Styles -->
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 
 <body>
@@ -31,8 +31,7 @@
                 MangaScan <span class="accent">AI</span>
             </h1>
             <p class="subtitle">
-                Traducción neuronal &middot; DeepSeek V4 Flash
-                <span class="badge">Deep Learning</span>
+                powered by Deepseek v4 Flash
             </p>
         </header>
 
@@ -53,7 +52,28 @@
                     <input type="file" id="fileInput" accept="application/pdf" hidden>
                 </div>
             </div>
-
+            <!-- Confirmation Panel -->
+            <div id="confirmation-container" class="glass-panel hidden" style="text-align: center; padding: 2.5rem 2rem;">
+                <h3 style="margin-top: 0;">Archivo seleccionado</h3>
+                <p id="selected-filename" style="color: var(--accent-cool); font-weight: 500; margin-bottom: 2rem; font-size: 1.1rem;"></p>
+                
+                <!-- Opciones de Traducción -->
+                <div class="options-panel" style="background: rgba(0,0,0,0.2); border-radius: var(--radius-md); padding: 1.5rem; display: flex; align-items: center; justify-content: space-between; text-align: left; margin-bottom: 2rem; border: 1px solid var(--border-light);">
+                    <div class="option-info">
+                        <h3 style="margin: 0; font-size: 1rem; font-weight: 500;">⚡ Modo Rápido (Sin redibujado)</h3>
+                        <p style="margin: 0.3rem 0 0 0; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">Omite la restauración de fondos. Es ~5 veces más rápido y ahorra RAM.</p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="fastModeToggle">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button id="cancel-upload-btn" class="btn secondary-btn" style="background: transparent; border: 1px solid var(--border-light);">Cancelar</button>
+                    <button id="start-upload-btn" class="btn primary-btn" style="padding: 0.8rem 2rem;">Comenzar Traducción</button>
+                </div>
+            </div>
             <!-- Progress Panel -->
             <div id="progress-container" class="glass-panel hidden" role="region" aria-live="polite"
                 aria-label="Progreso de traducción">
@@ -72,13 +92,21 @@
                     </button>
                 </div>
 
-                <div class="progress-bar-bg" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
-                    aria-label="Progreso de traducción">
-                    <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                <div id="terminal-wrapper">
+                    <div class="progress-bar-bg" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"
+                        aria-label="Progreso de traducción">
+                        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                    </div>
+
+                    <div class="terminal-container">
+                        <div id="terminal" class="terminal"></div>
+                    </div>
                 </div>
 
-                <div class="terminal-container">
-                    <div id="terminal" class="terminal"></div>
+                <div id="success-banner" class="hidden" style="text-align: center; padding: 2rem 0; animation: fadeUp 0.5s ease-out forwards;">
+                    <div style="font-size: 4rem; margin-bottom: 1rem; animation: popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;">🎉</div>
+                    <h2 style="margin: 0; color: var(--accent-cool);">¡Tu Manga está Listo!</h2>
+                    <p style="color: var(--text-secondary); margin-top: 0.5rem;">El archivo ha sido traducido exitosamente y ya puedes descargarlo.</p>
                 </div>
 
                 <div id="actions-container" style="margin-top: var(--space-lg); display: flex; justify-content: center; gap: 16px;">
@@ -96,14 +124,14 @@
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        Descargar PDF
+                        Descargar PDF Traducido
                     </a>
                 </div>
             </div>
         </main>
     </div>
 
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/app.js?v=8"></script>
 </body>
 
 </html>
