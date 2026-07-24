@@ -17,6 +17,7 @@ Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de 
 - **Validación Anti-Asiática Estricta:** Incorpora una capa de seguridad para rechazar y reintentar si el modelo intenta devolver caracteres asiáticos en la traducción.
 - **Renderizado Dinámico:** Redibuja el texto en español sobre la imagen ajustando la fuente.
 - **Ensamblaje a PDF:** Reconstruye la obra completa y genera un archivo final `_traducido.pdf` conservando la calidad de lectura original.
+- **Interfaz 100% Offline:** Las fuentes tipográficas están **autohospedadas** (`src/static/fonts/`, licencia OFL); la web no depende de Google Fonts ni de ninguna CDN externa, ideal para un NAS sin salida a internet.
 
 ---
 
