@@ -172,6 +172,7 @@ document.getElementById('start-upload-btn')?.addEventListener('click', async () 
 
         if (data.task_id) {
             currentTaskId = data.task_id;
+            localStorage.setItem('mangascan_task', data.task_id);
             appendLog(`✅ Archivo subido. ID Tarea: ${data.task_id}`, 'success');
             startLogStream(data.task_id, data.filename);
         } else {
@@ -350,10 +351,14 @@ if (cancelBtn) {
 
 if (resetBtn) {
     resetBtn.addEventListener('click', () => {
+        // Olvidar el trabajo actual para no reabrirlo al recargar.
+        localStorage.removeItem('mangascan_task');
+        currentTaskId = null;
+
         progressContainer.classList.add('hidden');
         dropzone.classList.remove('hidden');
         fileInput.value = '';
-        
+
         // Reset completion UI
         const terminalWrapper = document.getElementById('terminal-wrapper');
         const successBanner = document.getElementById('success-banner');
@@ -363,6 +368,65 @@ if (resetBtn) {
         progressBarFill.style.width = '0%';
     });
 }
+
+// ─── Reconexión a un trabajo en curso (al recargar/volver) ──────────
+async function reconnectExistingJob() {
+    let jobList = [];
+    try {
+        const res = await fetch('/api/jobs');
+        if (!res.ok) return;
+        jobList = await res.json();
+    } catch (e) {
+        return; // servidor sin registro (recién reiniciado) o sin red
+    }
+    if (!Array.isArray(jobList) || !jobList.length) return;
+
+    // 1) Prioridad: un trabajo activo en el servidor (corriendo o en cola).
+    let job = jobList.find(j => j.status === 'running') || jobList.find(j => j.status === 'queued');
+
+    // 2) Si no hay activo, recuperar el último que ESTE navegador estaba viendo,
+    //    solo si ya terminó (para poder descargarlo).
+    if (!job) {
+        const lastId = localStorage.getItem('mangascan_task');
+        if (lastId) {
+            job = jobList.find(j => j.task_id === lastId && (j.status === 'done' || j.status === 'error'));
+        }
+    }
+    if (!job) return;
+
+    currentTaskId = job.task_id;
+    localStorage.setItem('mangascan_task', job.task_id);
+
+    // Cambiar a la vista de progreso.
+    dropzone.classList.add('hidden');
+    document.getElementById('confirmation-container')?.classList.add('hidden');
+    progressContainer.classList.remove('hidden');
+    terminal.innerHTML = '';
+    progressBarFill.style.width = '0%';
+    downloadBtn.classList.add('hidden');
+    resetBtn.classList.remove('hidden');
+    updateProgressBarAria(0);
+
+    const activo = job.status === 'running' || job.status === 'queued';
+    if (activo) {
+        spinner.style.display = 'block';
+        statusText.textContent = `Reconectando: ${job.filename}`;
+        cancelBtn.style.display = 'inline-flex';
+        cancelBtn.disabled = false;
+        appendLog('🔄 Reconectado a un proceso que seguía corriendo en el servidor.', 'system');
+    } else {
+        spinner.style.display = 'none';
+        statusText.textContent = `Último trabajo: ${job.filename}`;
+        cancelBtn.style.display = 'none';
+        appendLog('📂 Mostrando el resultado de tu último trabajo.', 'system');
+    }
+
+    // El stream reproduce el log completo y luego sigue en vivo; para un trabajo
+    // ya terminado, disparará por sí mismo el estado de descarga.
+    startLogStream(job.task_id, job.filename);
+}
+
+reconnectExistingJob();
 
 // ─── Log Parser ──────────────────────────────
 

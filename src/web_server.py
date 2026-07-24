@@ -1,4 +1,5 @@
 import os
+import time
 import uuid
 import subprocess
 import asyncio
@@ -33,21 +34,29 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 active_processes = {}
 job_queue = asyncio.Queue()
+# Registro de trabajos conocidos por el servidor (sobrevive al cierre del navegador,
+# no al reinicio del servidor). Permite reconectar la UI a un proceso en curso.
+jobs: dict = {}
 
 async def queue_worker():
     while True:
         task = await job_queue.get()
         task_id, file_path, log_path, out_pdf_path, fast_mode = task
-        
+
+        if task_id in jobs:
+            jobs[task_id]["status"] = "running"
+
         try:
             # Escribir en log posiciÃ³n inicial (procesando)
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n[SYSTEM] Iniciando procesamiento de la tarea...\n")
-                
+
             await asyncio.to_thread(
                 run_orchestrator, task_id, file_path, log_path, out_pdf_path, fast_mode
             )
         except Exception as e:
+            if task_id in jobs:
+                jobs[task_id]["status"] = "error"
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(f"\n[SYSTEM] Error en el worker: {e}\n")
         finally:
@@ -85,8 +94,15 @@ async def upload_file(
         f.write(f"[SYSTEM] Archivo recibido. PosiciÃ³n en cola: {posicion}\n")
         f.write("[SYSTEM] Esperando recursos del sistema...\n")
         
+    jobs[task_id] = {
+        "task_id": task_id,
+        "filename": safe_filename,
+        "fast_mode": fast_mode,
+        "status": "queued",
+        "ts": time.time(),
+    }
     await job_queue.put((task_id, file_path, log_path, out_pdf_path, fast_mode))
-    
+
     return {"task_id": task_id, "filename": safe_filename}
 
 def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path: Path, fast_mode: bool = False):
@@ -131,6 +147,10 @@ def run_orchestrator(task_id: str, file_path: Path, log_path: Path, out_pdf_path
             file_path.unlink()
     except OSError:
         pass
+
+    # Estado final del trabajo (hay PDF = terminado, aunque falten páginas sueltas).
+    if task_id in jobs and jobs[task_id]["status"] not in ("cancelled",):
+        jobs[task_id]["status"] = "done" if out_pdf_path.exists() else "error"
 
 @app.get("/api/stream/{task_id}")
 async def stream_log(task_id: str):
@@ -198,17 +218,28 @@ async def download_file(task_id: str, filename: str):
         return FileResponse(path=out_pdf_path, filename=f"traducido_{safe_filename}", media_type='application/pdf')
     return {"error": "Archivo no encontrado o no terminado."}
 
+@app.get("/api/jobs")
+async def list_jobs():
+    """Trabajos conocidos por el servidor (más recientes primero).
+
+    La UI lo consulta al cargar para reconectarse a un proceso en curso o mostrar
+    el resultado del último trabajo terminado.
+    """
+    return sorted(jobs.values(), key=lambda j: j["ts"], reverse=True)
+
 @app.post("/api/cancel/{task_id}")
 async def cancel_task(task_id: str):
+    if task_id in jobs:
+        jobs[task_id]["status"] = "cancelled"
     if task_id in active_processes:
         process = active_processes.pop(task_id)
         process.kill()
-        
+
         log_path = OUTPUT_DIR / f"{task_id}.log"
         if log_path.exists():
             with open(log_path, "a", encoding="utf-8") as log_file:
                 log_file.write(f"\n[SYSTEM] Procesamiento cancelado por el usuario.\n")
-                
+
         return {"status": "cancelled"}
     return {"status": "not_found_or_finished"}
 
