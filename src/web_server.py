@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import shutil
 import subprocess
 import asyncio
 from contextlib import asynccontextmanager
@@ -226,6 +227,103 @@ async def list_jobs():
     el resultado del último trabajo terminado.
     """
     return sorted(jobs.values(), key=lambda j: j["ts"], reverse=True)
+
+
+def _dir_size(path: Path) -> int:
+    total = 0
+    if path.is_dir():
+        for p in path.rglob("*"):
+            if p.is_file():
+                try:
+                    total += p.stat().st_size
+                except OSError:
+                    pass
+    return total
+
+
+@app.get("/api/library")
+async def library():
+    """Escanea el disco (data/output) y devuelve todos los trabajos con su estado,
+    tamaño y si tienen PDF descargable o restos (raw/render) purgables."""
+    ids = set()
+    for log in OUTPUT_DIR.glob("*.log"):
+        ids.add(log.stem)
+    for d in OUTPUT_DIR.iterdir():
+        if d.is_dir():
+            ids.add(d.name)
+    ids.update(jobs.keys())
+
+    result = []
+    for tid in ids:
+        folder = OUTPUT_DIR / tid
+        pdf = next(folder.glob("translated_*.pdf"), None) if folder.is_dir() else None
+
+        filename = None
+        if pdf:
+            filename = pdf.name[len("translated_"):]
+        else:
+            inp = next(INPUT_DIR.glob(f"{tid}_*"), None)
+            if inp:
+                filename = inp.name[len(tid) + 1:]
+
+        reg = jobs.get(tid)
+        if reg:
+            status = reg["status"]
+        elif pdf:
+            status = "done"
+        else:
+            status = "incomplete"
+
+        leftovers = folder.is_dir() and ((folder / "raw").exists() or (folder / "render").exists())
+
+        if reg:
+            ts = reg["ts"]
+        elif folder.is_dir():
+            ts = folder.stat().st_mtime
+        else:
+            log = OUTPUT_DIR / f"{tid}.log"
+            ts = log.stat().st_mtime if log.exists() else 0
+
+        result.append({
+            "task_id": tid,
+            "filename": filename or tid,
+            "status": status,
+            "has_pdf": bool(pdf),
+            "leftovers": bool(leftovers),
+            "size_mb": round(_dir_size(folder) / 1024 / 1024, 1),
+            "ts": ts,
+        })
+
+    result.sort(key=lambda x: x["ts"], reverse=True)
+    return result
+
+
+@app.delete("/api/jobs/{task_id}")
+async def delete_job(task_id: str):
+    """Purga un trabajo: borra su carpeta de salida, su log y el PDF de entrada.
+    Rechaza el borrado si el trabajo aún está corriendo (hay que cancelarlo antes)."""
+    tid = Path(task_id).name
+    if tid in active_processes:
+        return {"status": "running", "error": "Cancela el trabajo antes de eliminarlo."}
+
+    folder = OUTPUT_DIR / tid
+    try:
+        folder.resolve().relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return {"status": "error", "error": "Ruta inválida."}
+
+    if folder.is_dir():
+        shutil.rmtree(folder, ignore_errors=True)
+    log = OUTPUT_DIR / f"{tid}.log"
+    if log.exists():
+        log.unlink(missing_ok=True)
+    for inp in INPUT_DIR.glob(f"{tid}_*"):
+        try:
+            inp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    jobs.pop(tid, None)
+    return {"status": "deleted", "task_id": tid}
 
 @app.post("/api/cancel/{task_id}")
 async def cancel_task(task_id: str):

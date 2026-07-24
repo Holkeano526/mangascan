@@ -428,6 +428,113 @@ async function reconnectExistingJob() {
 
 reconnectExistingJob();
 
+// ─── Biblioteca ──────────────────────────────
+function libStatusInfo(s) {
+    const map = {
+        done: ['Completado', '#10b981'],
+        running: ['En curso', '#3b82f6'],
+        queued: ['En cola', '#9ca3af'],
+        error: ['Error', '#ef4444'],
+        cancelled: ['Cancelado', '#f59e0b'],
+        incomplete: ['Incompleto', '#9ca3af'],
+    };
+    return map[s] || [s, '#9ca3af'];
+}
+
+async function openLibrary() {
+    const panel = document.getElementById('library-container');
+    const list = document.getElementById('library-list');
+    if (!panel || !list) return;
+
+    // Ocultar el resto de vistas.
+    dropzone.classList.add('hidden');
+    document.getElementById('confirmation-container')?.classList.add('hidden');
+    progressContainer.classList.add('hidden');
+    panel.classList.remove('hidden');
+    list.textContent = 'Cargando…';
+
+    let entries = [];
+    try {
+        const res = await fetch('/api/library');
+        entries = await res.json();
+    } catch (e) {
+        list.textContent = 'No se pudo cargar la biblioteca.';
+        return;
+    }
+    renderLibrary(entries);
+}
+
+function renderLibrary(entries) {
+    const list = document.getElementById('library-list');
+    list.innerHTML = '';
+    if (!Array.isArray(entries) || !entries.length) {
+        list.textContent = 'No hay trabajos todavía.';
+        return;
+    }
+    for (const e of entries) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:12px; padding:0.75rem 0; border-bottom:1px solid var(--border-light);';
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1; min-width:0;';
+        const name = document.createElement('div');
+        name.textContent = e.filename;
+        name.style.cssText = 'font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;';
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:0.8rem; color:var(--text-secondary); margin-top:2px;';
+        const [label, color] = libStatusInfo(e.status);
+        const chip = document.createElement('span');
+        chip.textContent = label;
+        chip.style.cssText = `color:${color}; font-weight:600;`;
+        meta.appendChild(chip);
+        meta.appendChild(document.createTextNode(` · ${e.size_mb} MB${e.leftovers ? ' · restos temporales' : ''}`));
+        info.appendChild(name);
+        info.appendChild(meta);
+        row.appendChild(info);
+
+        if (e.has_pdf) {
+            const dl = document.createElement('a');
+            dl.href = `/api/download/${e.task_id}?filename=${encodeURIComponent(e.filename)}`;
+            dl.className = 'btn primary-btn';
+            dl.style.cssText = 'padding:0.4rem 0.9rem; font-size:0.85rem; flex-shrink:0;';
+            dl.textContent = '⬇ Descargar';
+            dl.setAttribute('download', '');
+            row.appendChild(dl);
+        }
+
+        const del = document.createElement('button');
+        del.className = 'btn';
+        del.style.cssText = 'padding:0.4rem 0.9rem; font-size:0.85rem; flex-shrink:0; background:rgba(239,68,68,0.15); color:var(--accent-error); border:1px solid rgba(239,68,68,0.3);';
+        del.textContent = '🗑 Eliminar';
+        del.addEventListener('click', () => deleteJob(e.task_id, e.filename));
+        row.appendChild(del);
+
+        list.appendChild(row);
+    }
+}
+
+async function deleteJob(taskId, filename) {
+    if (!confirm(`¿Eliminar "${filename}"?\nSe borrarán su PDF, log y archivos temporales. Esta acción no se puede deshacer.`)) return;
+    try {
+        const res = await fetch(`/api/jobs/${taskId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.status === 'running') {
+            alert(data.error || 'El trabajo está en curso; cancélalo antes de eliminarlo.');
+            return;
+        }
+    } catch (e) {
+        alert('Error al eliminar el trabajo.');
+        return;
+    }
+    openLibrary(); // refrescar la lista
+}
+
+document.getElementById('open-library-btn')?.addEventListener('click', openLibrary);
+document.getElementById('close-library-btn')?.addEventListener('click', () => {
+    document.getElementById('library-container')?.classList.add('hidden');
+    dropzone.classList.remove('hidden');
+});
+
 // ─── Log Parser ──────────────────────────────
 
 function parseLogLine(raw) {

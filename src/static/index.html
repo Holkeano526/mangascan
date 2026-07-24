@@ -29,6 +29,9 @@
             <p class="subtitle">
                 powered by Deepseek v4 Flash
             </p>
+            <button id="open-library-btn" class="btn" style="margin-top:1rem; background:rgba(255,255,255,0.08); color:var(--text-primary); border:1px solid var(--border-light);">
+                📚 Biblioteca
+            </button>
         </header>
 
         <main>
@@ -124,10 +127,19 @@
                     </a>
                 </div>
             </div>
+
+            <!-- Biblioteca -->
+            <div id="library-container" class="glass-panel hidden" role="region" aria-label="Biblioteca de traducciones">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; gap:12px;">
+                    <h3 style="margin:0;">📚 Biblioteca</h3>
+                    <button id="close-library-btn" class="btn" style="background:rgba(255,255,255,0.08); color:var(--text-primary); border:1px solid var(--border-light); padding:0.4rem 1rem;">Volver</button>
+                </div>
+                <div id="library-list"></div>
+            </div>
         </main>
     </div>
 
-    <script src="/static/app.js?v=11"></script>
+    <script src="/static/app.js?v=12"></script>
 </body>
 
 </html>
