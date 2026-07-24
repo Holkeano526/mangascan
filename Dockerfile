@@ -18,8 +18,13 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Clonar manga-image-translator completo porque su paquete de pip está roto/incompleto
+# Clonar manga-image-translator completo porque su paquete de pip está roto/incompleto.
+# Se fija a un ref concreto para builds reproducibles: cambia MIT_REF a un commit o
+# tag cuando quieras congelar la versión del motor (por defecto sigue 'main').
+#   docker compose build --build-arg MIT_REF=<commit-o-tag>
+ARG MIT_REF=main
 RUN git clone https://github.com/zyddnys/manga-image-translator.git /app/manga-image-translator && \
+    cd /app/manga-image-translator && git checkout "${MIT_REF}" && \
     pip install --no-cache-dir -r /app/manga-image-translator/requirements.txt
 
 # Configurar PYTHONPATH para que los scripts en src/ encuentren a manga_translator

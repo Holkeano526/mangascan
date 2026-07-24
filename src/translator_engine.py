@@ -33,6 +33,26 @@ SYSTEM_PROMPT = (
 )
 
 
+def parsear_traduccion(contenido: str, ids_originales: set[str]) -> dict[str, str]:
+    """Limpia y valida la respuesta del modelo. Función pura (testeable).
+
+    - Quita cercas markdown (```json ... ```).
+    - Rechaza traducciones con caracteres asiáticos (kanji/kana/hanzi).
+    - Rellena con "" los ids que el modelo haya omitido.
+    """
+    contenido = contenido.strip().removeprefix("```json").removeprefix("```")
+    contenido = contenido.removesuffix("```").strip()
+    traducciones = json.loads(contenido)
+
+    for k, v in traducciones.items():
+        if PATRON_ASIATICO.search(str(v)):
+            raise ValueError(f"Caracteres asiáticos en ID {k}: {str(v)[:80]}")
+
+    for fid in ids_originales - set(traducciones.keys()):
+        traducciones[fid] = ""
+    return traducciones
+
+
 class TraductorMangaOptimizado:
     """Pipeline completo en memoria. Los modelos ML se cargan UNA vez y se reutilizan."""
 
@@ -41,6 +61,7 @@ class TraductorMangaOptimizado:
         self.font_size_min = font_size_min
         self._translator = None  # lazy singleton
         self._config_cache = None
+        self.contexts: dict = {}  # contexto por página (liberado tras renderizar)
 
     def _get_translator(self):
         """Retorna la instancia singleton de MangaTranslator."""
@@ -58,9 +79,6 @@ class TraductorMangaOptimizado:
                     if str(ruta.resolve()) not in sys.path:
                         sys.path.insert(0, str(ruta.resolve()))
                     break
-
-            # Caché de contextos para Etapa 3 (Human-in-the-Loop)
-            self.contexts = {}
 
             # Crear directorio de caché seguro si estamos en Docker
             if Path("/config").exists():
@@ -125,6 +143,8 @@ class TraductorMangaOptimizado:
                 bubbles.append({"id": i, "src": region.text})
 
             traducciones = await self._traducir_pagina_async(bubbles)
+            for i, region in enumerate(ctx.text_regions):
+                region.translation = traducciones.get(str(i), region.text)
             for b in bubbles:
                 b["translation"] = traducciones.get(str(b["id"]), b["src"])
 
@@ -138,8 +158,12 @@ class TraductorMangaOptimizado:
         self.contexts[img_path.name] = ctx
         return {"pagina": img_path.name, "bubbles": bubbles}
 
-    async def renderizar_pagina(self, img_path: Path, traducciones_editadas: dict[str, str], fast_mode: bool = False) -> Path:
-        """Fase B: Inpainting y Renderizado final."""
+    def liberar_contexto(self, nombre: str) -> None:
+        """Descarta el contexto de una página para liberar RAM."""
+        self.contexts.pop(nombre, None)
+
+    async def renderizar_pagina(self, img_path: Path, fast_mode: bool = False) -> Path:
+        """Fase B: Inpainting y Renderizado final (usa la traducción ya fijada en preparar_pagina)."""
         translator = self._get_translator()
         from manga_translator.utils import dump_image, load_image
         
@@ -155,8 +179,7 @@ class TraductorMangaOptimizado:
         ctx.img_rgb, ctx.img_alpha = load_image(ctx.upscaled)
 
         cfg_full = self._get_config("full", fast_mode=fast_mode)
-        for i, region in enumerate(ctx.text_regions or []):
-            region.translation = traducciones_editadas.get(str(i), region.text)
+        for region in ctx.text_regions or []:
             region.target_lang = "ESP"
             region._alignment = cfg_full.render.alignment
             region._direction = cfg_full.render.direction
@@ -199,7 +222,6 @@ class TraductorMangaOptimizado:
                 {"role": "user", "content": json.dumps(entrada, ensure_ascii=False)},
             ],
             "temperature": 0.3,
-            "max_tokens": 4096,
         }
 
         max_retries = 2
@@ -222,18 +244,7 @@ class TraductorMangaOptimizado:
                     continue
                 r.raise_for_status()
                 contenido = r.json()["choices"][0]["message"]["content"]
-                contenido = contenido.strip().removeprefix("```json").removeprefix("```")
-                contenido = contenido.removesuffix("```").strip()
-                traducciones = json.loads(contenido)
-
-                for k, v in traducciones.items():
-                    if PATRON_ASIATICO.search(str(v)):
-                        raise ValueError(f"Caracteres asiáticos en ID {k}: {v[:80]}")
-
-                ids_originales = set(entrada.keys())
-                ids_traducidos = set(traducciones.keys())
-                for fid in ids_originales - ids_traducidos:
-                    traducciones[fid] = ""
+                traducciones = parsear_traduccion(contenido, set(entrada.keys()))
                 logger.info(f"Traducción: {len(traducciones)} textos")
                 return traducciones
 

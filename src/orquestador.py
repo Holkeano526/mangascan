@@ -76,58 +76,36 @@ async def procesar_tomo_async(
     if not imgs:
         raise RuntimeError("No se extrajeron imágenes del PDF o carpeta.")
 
-    # ── Fase A: Preparación (Detección, OCR, Traducción) ───────────────
+    # ── Procesamiento por página: detección → OCR → traducción → render ──
+    # Cada página se procesa entera y libera su contexto de RAM antes de la
+    # siguiente, acotando el uso de memoria en tomos largos (crítico en NAS).
     pipeline = TraductorMangaOptimizado(api_key, font_size_min)
     fallos = []
-    
-    # Lista global para guardar textos de todo el tomo
-    todas_las_paginas = []
-    
-    logger.info("\n--- FASE A: Analizando textos de todo el tomo ---")
-    for img_path in imgs:
+
+    total = len(imgs)
+    logger.info("\n--- Procesando páginas (detección → traducción → render) ---")
+    for idx, img_path in enumerate(imgs, start=1):
         render_img = render_dir / f"{img_path.stem}_es{img_path.suffix}"
         if not force and render_img.exists():
-            logger.info(f"✓ {img_path.name} ya procesada, saltando análisis")
+            logger.info(f"✓ Página {idx}/{total}: {img_path.name} ya procesada, saltando")
             continue
 
-        logger.info(f"Analizando: {img_path.name}")
+        inicio = time.time()
+        logger.info(f"Página {idx}/{total}: {img_path.name}")
         try:
             res_pagina = await pipeline.preparar_pagina(img_path, fast_mode=fast_mode)
-            todas_las_paginas.append(res_pagina)
-        except Exception as e:
-            logger.error(f"  ✗ Error al analizar {img_path.name}: {e}", exc_info=True)
-            fallos.append({"pagina": img_path.name, "error": str(e)})
-
-    # Guardar traducciones para que el Web Server las lea
-    json_path = work_dir / "traducciones.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(todas_las_paginas, f, ensure_ascii=False, indent=2)
-        
-    # Convertir a un diccionario { "pagina.png": { "0": "texto", "1": "texto" } }
-    traducciones_dict = {}
-    for pag in todas_las_paginas:
-        traducciones_dict[pag["pagina"]] = {str(b["id"]): b["translation"] for b in pag["bubbles"]}
-
-    # ── Fase B: Renderizado e Inpainting ───────────────────────────────
-    logger.info("\n--- FASE B: Redibujando páginas ---")
-    for img_path in imgs:
-        render_img = render_dir / f"{img_path.stem}_es{img_path.suffix}"
-        if not force and render_img.exists():
-            continue
-
-        if img_path.name not in pipeline.contexts:
-            # Saltado o fallo previo
-            shutil.copy2(img_path, render_img)
-            continue
-            
-        inicio = time.time()
-        try:
-            textos_editados = traducciones_dict.get(img_path.name, {})
-            await pipeline.renderizar_pagina(img_path, textos_editados, fast_mode=fast_mode)
-            logger.info(f"  ✓ {img_path.name} redibujada en {time.time() - inicio:.1f}s")
+            if res_pagina["bubbles"]:
+                await pipeline.renderizar_pagina(img_path, fast_mode=fast_mode)
+                logger.info(f"  ✓ {img_path.name} en {time.time() - inicio:.1f}s")
+            else:
+                # Sin texto detectado: copiar la página original tal cual
+                pipeline.liberar_contexto(img_path.name)
+                shutil.copy2(img_path, render_img)
+                logger.info(f"  ✓ {img_path.name} sin texto, copiada")
         except Exception as e:
             logger.error(f"  ✗ {img_path.name}: {e}", exc_info=True)
             fallos.append({"pagina": img_path.name, "error": str(e)})
+            pipeline.liberar_contexto(img_path.name)
             shutil.copy2(img_path, render_img)
 
     # ── Ensamblaje: PDF final ──────────────────────────────────────────────

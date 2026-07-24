@@ -17,6 +17,7 @@ data/
 # Archivos pesados o descargados
 miniconda.sh
 Miniconda3-latest-Linux-x86_64.sh
+get-pip.py
 manga-image-translator-src/
 manga-image-translator/
 

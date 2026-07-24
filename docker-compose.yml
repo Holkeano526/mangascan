@@ -14,8 +14,15 @@ services:
       - PGID=100
       # Zona horaria
       - TZ=America/Bogota
-      # Tu clave de DeepSeek
-      - DEEPSEEK_API_KEY=
+      # Tu clave de DeepSeek — se lee desde el archivo .env (NO la escribas aquí,
+      # este archivo está rastreado por git y se subiría a GitHub).
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # ── Optimización CPU (opcional, para NAS Intel sin GPU) ──────────────────
+      # Ajusta estos valores al número de núcleos FÍSICOS de tu NAS (no hilos).
+      # Ej.: i5-1135G7 = 4 núcleos. Limitar a los físicos mejora el rendimiento
+      # de las librerías ML (PyTorch/OpenMP) al evitar saltos de hilo entre núcleos.
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - MKL_NUM_THREADS=${MKL_NUM_THREADS:-4}
     volumes:
       # Datos de entrada (PDFs a subir) y salida (Traducciones y logs temporales)
       - ./data:/app/data

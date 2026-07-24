@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Solo instalamos las dependencias ligeras de la app. El motor ML pesado
+      # (PyTorch/OpenVINO/pydensecrf) NO se instala a propósito: es enorme y no
+      # compila en runners estándar. Los tests cubren solo la lógica pura.
+      - name: Instalar dependencias ligeras
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pymupdf requests Pillow python-dotenv fastapi uvicorn python-multipart
+
+      - name: Ejecutar tests
+        run: pytest

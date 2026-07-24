@@ -22,7 +22,7 @@ Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de 
 
 ## ⚙️ Arquitectura y Flujo de Procesamiento
 
-El código ha sido diseñado como un **Pipeline Asíncrono Continuo** (Zero-Disk IPC), lo que significa que el archivo PDF se procesa de forma íntegra en la memoria sin lecturas o escrituras innecesarias en el disco, maximizando el rendimiento en hardware limitado.
+El código está diseñado como un **pipeline asíncrono página por página**: los pesados modelos de IA se cargan **una sola vez** en memoria (patrón Singleton) y se reutilizan, y cada página se procesa por completo (detección → OCR → traducción → render) **liberando su memoria antes de pasar a la siguiente**. Esto acota el uso de RAM en tomos largos, algo crítico en hardware limitado como un NAS. Las imágenes intermedias se escriben en disco de forma temporal y se purgan automáticamente al finalizar.
 
 ```mermaid
 graph TD
@@ -85,16 +85,16 @@ Para evitar dolores de cabeza, **la forma oficial y recomendada de usar MangaSca
 
 1. **Clonar el repositorio:**
    ```bash
-   git clone https://github.com/tu-usuario/traductor-manga.git
-   cd traductor-manga
+   git clone https://github.com/Holkeano526/mangascan.git
+   cd mangascan
    ```
 
 2. **Configurar tu API Key:**
-   Abre el archivo `docker-compose.yml` y coloca tu clave de DeepSeek en la variable correspondiente:
-   ```yaml
-   environment:
-     - DEEPSEEK_API_KEY=sk-tu_api_key_aqui
+   Crea un archivo `.env` en la raíz del proyecto (junto a `docker-compose.yml`) con tu clave de DeepSeek. Docker Compose la inyecta automáticamente en el contenedor:
+   ```env
+   DEEPSEEK_API_KEY=sk-tu_api_key_aqui
    ```
+   > ⚠️ **No** escribas la clave directamente en `docker-compose.yml`: ese archivo está rastreado por git y expondría tu clave al subirlo a GitHub.
 
 3. **Levantar el proyecto:**
    Abre una terminal en la carpeta del proyecto y ejecuta:
@@ -150,7 +150,7 @@ Activa tu entorno virtual y arranca el backend de FastAPI:
 
 ```bash
 # Activar entorno
-source ~/env_manga/bin/activate
+source venv/bin/activate
 
 # Arrancar la web
 uvicorn src.web_server:app --host 0.0.0.0 --port 8000
@@ -178,7 +178,7 @@ Accede a `http://IP_DE_TU_NAS:8000` y listo.
 ### Usar otras Inteligencias Artificiales (Anthropic, Gemini, OpenAI, Locales)
 MangaScan AI está diseñado utilizando la estructura estándar de mensajes de OpenAI. Esto significa que **puedes usar prácticamente cualquier otra IA del mercado** simplemente apuntando la URL base hacia otro proveedor.
 
-Para hacerlo, modifica las siguientes variables de entorno (ya sea en tu `.env` o en el `docker-compose.yml`):
+Para hacerlo, define las siguientes variables en tu archivo `.env` (nunca la clave en `docker-compose.yml`, que se sube a git):
 ```env
 # Por defecto es "https://api.deepseek.com/chat/completions"
 DEEPSEEK_API_URL="https://api.openai.com/v1/chat/completions"
@@ -193,10 +193,8 @@ DEEPSEEK_MODEL="gpt-4o-mini"
 El comportamiento del modelo (tono, estilo y reglas de traducción) puede ser modificado a tu gusto editando el archivo `src/translator_engine.py`. Busca la constante `SYSTEM_PROMPT` y ajusta las instrucciones para que el modelo hable de manera más formal, use jerga específica o mantenga honoríficos japoneses.
 
 ### Configuración de Globos de Texto (Sensibilidad)
-Por defecto, el sistema viene configurado con un "Punto Medio" quirúrgico para encontrar textos en burbujas inusuales (como formas hexagonales) y textos dispersos. Si notas que ignora textos muy claros o une párrafos que no debería, puedes modificar los umbrales de detección. 
-Estos valores viven en:
-- `src/fase2_detectar_ocr.py` (Línea 70 aprox: `config.detector.text_threshold` y `box_threshold`)
-- `src/fase4_inpainting_render.py` (Mismos valores, ¡recuerda que ambos deben coincidir!)
+Por defecto, el sistema viene configurado con un "Punto Medio" quirúrgico para encontrar textos en burbujas inusuales (como formas hexagonales) y textos dispersos. Si notas que ignora textos muy claros o une párrafos que no debería, puedes modificar los umbrales de detección.
+Estos valores viven en `src/translator_engine.py`, dentro del método `_get_config` (busca `cfg.detector.text_threshold` y `cfg.detector.box_threshold`). La configuración se cachea y se comparte entre las fases de detección y renderizado, así que solo hay un lugar que editar y ambas fases quedan siempre sincronizadas automáticamente.
 
 > **Nota:** Para entender más sobre cómo estos valores afectan el tamaño y fusión de las cajas de texto (por ejemplo usando `unclip_ratio`), te recomendamos consultar la [documentación oficial de manga-image-translator](https://github.com/zyddnys/manga-image-translator).
 
@@ -210,15 +208,16 @@ Estos valores viven en:
 
 ## 📂 Arquitectura Interna del Pipeline
 
-El `src/orquestador.py` organiza el proceso en 5 fases secuenciales ininterrumpidas:
+El `src/orquestador.py` procesa el tomo **página por página** para acotar el uso de memoria. El flujo es:
 
-1. **Extracción (PyMuPDF):** Descompone el archivo PDF de entrada en imágenes individuales PNG en alta resolución (carpeta `raw/`).
-2. **Detección y OCR Local:** Utiliza el motor local para localizar las cajas delimitadoras de los globos y extraer los caracteres japoneses.
-3. **Traducción en Lote:** Unifica los textos de la página actual, los envía estructurados en JSON a DeepSeek y recupera sus correspondientes traducciones al español. Cuenta con mitigación de errores `HTTP 429` (Exponential Backoff).
-4. **Inpainting & Render:** Borra el texto de la imagen cruda utilizando la máscara detectada en la fase 2 y dibuja la fuente ajustando los límites. (Carpeta `render/`).
-5. **Reconstrucción Final:** Lee las imágenes traducidas de la carpeta render (junto con las páginas sin texto detectado) y vuelve a unificar el libro en formato `.pdf` con la coletilla `_traducido`.
+1. **Extracción (PyMuPDF, una vez):** Descompone el PDF de entrada en imágenes PNG de alta resolución (carpeta `raw/`).
+2. **Por cada página** (detección → traducción → render, liberando la RAM de esa página al terminar):
+   - **Detección y OCR local:** localiza las cajas de los globos y extrae los caracteres japoneses.
+   - **Traducción:** unifica los textos de la página, los envía en JSON a DeepSeek y recupera el español. Incluye mitigación de `HTTP 429` (Exponential Backoff) y validación anti-asiática con reintentos.
+   - **Inpainting & Render:** borra el texto original con la máscara detectada y dibuja la fuente en español (carpeta `render/`). Las páginas sin texto detectado se copian tal cual.
+3. **Reconstrucción final (una vez):** cose las imágenes de `render/` en el `.pdf` final con la coletilla `_traducido`.
 
-*Tras el punto final, si el flag `--debug` no está activo, el sistema purga automáticamente todos los ficheros intermedios pesados.*
+*Al finalizar, si el flag `--debug` no está activo, se purgan automáticamente los ficheros intermedios (`raw/`, `render/`); además, el servidor web borra el PDF de entrada para no llenar el disco del NAS.*
 
 ---
 

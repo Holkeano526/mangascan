@@ -201,26 +201,14 @@ function appendLog(msg, type = '') {
     terminal.parentElement.scrollTop = terminal.parentElement.scrollHeight;
 }
 
-function parseLogLine(raw) {
-    let type = '';
-    let text = raw.trim();
-
-    if (text.includes('[INFO]')) type = 'info';
-    else if (text.includes('[WARNING]') || text.includes('[WARN]')) type = 'warning';
-    else if (text.includes('[ERROR]') || text.includes('[FATAL]')) type = 'error';
-    else if (text.includes('[DEBUG]')) type = 'system';
-    else if (text.includes('[SUCCESS]')) type = 'success';
-    
-    text = text.replace(/\[(INFO|WARNING|WARN|ERROR|FATAL|DEBUG|SUCCESS)\]\s*/i, '');
-    return { text, type };
-}
-
 // ─── Event Stream (SSE) ──────────────────────
 
 function startLogStream(taskId, filename) {
     const evtSource = new EventSource(`/api/stream/${taskId}`);
     currentEvtSource = evtSource;
     let totalPages = 0;
+    let pagesOk = null;
+    let pagesTotal = null;
 
     evtSource.onmessage = function (event) {
         const rawLine = event.data;
@@ -238,8 +226,15 @@ function startLogStream(taskId, filename) {
             updateProgressBarAria(percent);
         }
 
+        // Resumen final del orquestador: "COMPLETADO: 45/53"
+        const okMatch = rawLine.match(/COMPLETADO:\s*(\d+)\s*\/\s*(\d+)/i);
+        if (okMatch) {
+            pagesOk = parseInt(okMatch[1], 10);
+            pagesTotal = parseInt(okMatch[2], 10);
+        }
+
         // System progress markers
-        if (rawLine.match(/(Procesando|Extrayendo|OCR|Analizando|Fase A|Fase B)/i)) {
+        if (rawLine.match(/(Procesando|Extrayendo|OCR|Analizando)/i)) {
             progressBarFill.style.width = `${Math.min((progressBarFill.style.width ? parseFloat(progressBarFill.style.width) + 5 : 0), 85)}%`;
         }
 
@@ -248,23 +243,51 @@ function startLogStream(taskId, filename) {
             evtSource.close();
             currentEvtSource = null;
             cancelBtn.style.display = 'none';
-            progressBarFill.style.width = '100%';
-            updateProgressBarAria(100);
-            statusText.textContent = '🎉 ¡Traducción Completada!';
+            resetBtn.classList.remove('hidden');
             spinner.style.display = 'none';
 
-            // Hide terminal and show premium success banner
+            const codeMatch = rawLine.match(/codigo:\s*(-?\d+)/i);
+            const code = codeMatch ? parseInt(codeMatch[1], 10) : 0;
+            const failed = (pagesTotal !== null && pagesOk !== null) ? (pagesTotal - pagesOk) : null;
+
+            // Fallo fatal: excepción (código 2) o cero páginas correctas → no hay PDF.
+            const fatal = code === 2 || (pagesOk === 0 && pagesTotal > 0);
+
             const terminalWrapper = document.getElementById('terminal-wrapper');
             const successBanner = document.getElementById('success-banner');
-            if (terminalWrapper) terminalWrapper.style.display = 'none';
-            if (successBanner) successBanner.classList.remove('hidden');
 
-            downloadBtn.href = `/api/download/${taskId}?filename=${encodeURIComponent(filename)}`;
-            downloadBtn.classList.remove('hidden', 'primary-btn');
-            downloadBtn.classList.add('success-btn');
-            resetBtn.classList.remove('hidden');
+            if (fatal) {
+                appendLog('❌ El proceso falló y no se generó ningún PDF (código ' + code + ').', 'error');
+                statusText.textContent = 'Traducción Fallida';
+            } else {
+                progressBarFill.style.width = '100%';
+                updateProgressBarAria(100);
 
-            appendLog('📥 PDF listo para descargar.', 'success');
+                if (terminalWrapper) terminalWrapper.style.display = 'none';
+                if (successBanner) successBanner.classList.remove('hidden');
+
+                if (failed && failed > 0) {
+                    // Éxito parcial: el PDF existe pero algunas páginas no se tradujeron.
+                    statusText.textContent = `⚠️ Completado (${failed} sin traducir)`;
+                    const h2 = successBanner ? successBanner.querySelector('h2') : null;
+                    const p = successBanner ? successBanner.querySelector('p') : null;
+                    if (h2) h2.textContent = 'Traducción completada (parcial)';
+                    if (p) p.textContent = `${pagesOk} de ${pagesTotal} páginas traducidas. Las ${failed} restantes se incluyen sin traducir (sin texto detectado o con error).`;
+                    appendLog(`⚠️ ${failed} página(s) sin traducir, pero el PDF está completo y descargable.`, 'warning');
+                } else {
+                    // Éxito total: restaurar el texto por defecto del banner.
+                    const h2 = successBanner ? successBanner.querySelector('h2') : null;
+                    const p = successBanner ? successBanner.querySelector('p') : null;
+                    if (h2) h2.textContent = '¡Tu Manga está Listo!';
+                    if (p) p.textContent = 'El archivo ha sido traducido exitosamente y ya puedes descargarlo.';
+                    statusText.textContent = '🎉 ¡Traducción Completada!';
+                    appendLog('📥 PDF listo para descargar.', 'success');
+                }
+
+                downloadBtn.href = `/api/download/${taskId}?filename=${encodeURIComponent(filename)}`;
+                downloadBtn.classList.remove('hidden', 'primary-btn');
+                downloadBtn.classList.add('success-btn');
+            }
         }
     };
 

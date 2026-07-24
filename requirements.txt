@@ -9,6 +9,13 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 python-multipart>=0.0.9
 
-# Dependencias completas del motor ML de Manga Translator
+# Motor ML (visión / OCR)
 opencv-python-headless>=4.8.0
--r https://raw.githubusercontent.com/zyddnys/manga-image-translator/main/requirements.txt
+
+# NOTA: Las dependencias pesadas de manga-image-translator (PyTorch, numpy 1.26,
+# OpenVINO, pydensecrf...) NO se listan aquí a propósito. El Dockerfile clona el
+# motor a un ref fijo (ARG MIT_REF) e instala su requirements.txt desde el clone,
+# lo que hace el build reproducible y evita instalarlas dos veces.
+# Para una instalación nativa (Linux + Python 3.11), clona el motor manualmente:
+#   git clone https://github.com/zyddnys/manga-image-translator.git
+#   pip install -r manga-image-translator/requirements.txt
