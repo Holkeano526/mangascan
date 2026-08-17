@@ -1,7 +1,10 @@
 # Dockerfile para el Traductor de Manga desde PDF
-# Basado en el plan del proyecto
+# Basado en el plan del proyecto (Arquitectura Moderna)
 
 FROM python:3.11-slim
+
+# COPY uv binary from official image
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Instalar dependencias del sistema necesarias para OpenCV/PyMuPDF/manga-image-translator
 RUN apt-get update && apt-get install -y \
@@ -19,13 +22,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Clonar manga-image-translator completo porque su paquete de pip está roto/incompleto.
-# Se fija a un ref concreto para builds reproducibles: cambia MIT_REF a un commit o
-# tag cuando quieras congelar la versión del motor (por defecto sigue 'main').
-#   docker compose build --build-arg MIT_REF=<commit-o-tag>
 ARG MIT_REF=main
 RUN git clone https://github.com/zyddnys/manga-image-translator.git /app/manga-image-translator && \
     cd /app/manga-image-translator && git checkout "${MIT_REF}" && \
-    pip install --no-cache-dir -r /app/manga-image-translator/requirements.txt
+    uv pip install --system --no-cache -r /app/manga-image-translator/requirements.txt
 
 # Configurar PYTHONPATH para que los scripts en src/ encuentren a manga_translator
 ENV PYTHONPATH="/app/manga-image-translator:${PYTHONPATH}"
@@ -34,15 +34,14 @@ ENV PYTHONPATH="/app/manga-image-translator:${PYTHONPATH}"
 RUN rm -rf /app/manga-image-translator/models && \
     ln -s /config/models /app/manga-image-translator/models
 
-# Copiar requirements de nuestra app primero para cachear capa de dependencias
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar configuración del proyecto e instalar dependencias con uv
+COPY pyproject.toml .
+RUN uv pip install --system --no-cache .
 
 # Copiar el código fuente
 COPY src/ ./src/
 
 # NAS Optimization: Mapear todo el caché de modelos pesados a /config
-# para que no se borren en cada actualización y puedan ser montados en el disco del NAS.
 VOLUME ["/app/data", "/config"]
 
 # Exponer el puerto para la interfaz web
@@ -56,5 +55,5 @@ ENV TORCH_HOME="/config/cache/torch"
 ENV HF_HOME="/config/cache/huggingface"
 ENV YOLO_CONFIG_DIR="/config/cache/yolo"
 
-# Punto de entrada (Servidor Web)
-CMD ["uvicorn", "src.web_server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Punto de entrada (Servidor Web reestructurado)
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
