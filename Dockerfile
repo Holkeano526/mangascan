@@ -25,7 +25,7 @@ WORKDIR /app
 ARG MIT_REF=main
 RUN git clone https://github.com/zyddnys/manga-image-translator.git /app/manga-image-translator && \
     cd /app/manga-image-translator && git checkout "${MIT_REF}" && \
-    uv pip install --system --no-cache -r /app/manga-image-translator/requirements.txt
+    pip install --no-cache-dir -r /app/manga-image-translator/requirements.txt
 
 # Configurar PYTHONPATH para que los scripts en src/ encuentren a manga_translator
 ENV PYTHONPATH="/app/manga-image-translator:${PYTHONPATH}"
