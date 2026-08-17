@@ -7,7 +7,7 @@ services:
     image: mangascan-ai:latest
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
       # OMV/NAS: Especifica el ID de tu usuario y grupo para evitar problemas de permisos
       - PUID=1000
