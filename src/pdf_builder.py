@@ -45,34 +45,37 @@ def imagenes_a_pdf(
     doc = fitz.open()
     for img_path in imgs:
         try:
-            # Cargar imagen como Pixmap
-            pix = fitz.Pixmap(str(img_path))
+            # OPTIMIZACIÓN OOM: Usamos PIL para leer solo el header y las dimensiones, 
+            # evitando descomprimir toda la imagen en RAM como hacía fitz.Pixmap().
+            try:
+                from PIL import Image
+            except ImportError:
+                raise RuntimeError("Se requiere la librería 'Pillow' (PIL) para el ensamblaje de PDF optimizado.")
 
-            # Si se pide JPEG para reducir tamaño
+            with Image.open(img_path) as img:
+                width, height = img.size
+
+            img_stream = None
+            # Si se pide JPEG para reducir tamaño, lo convertimos en memoria
             if calidad_jpg is not None:
-                # Convertir a RGB si es necesario (PNG puede ser RGBA)
-                if pix.n > 3:
-                    pix = fitz.Pixmap(fitz.csRGB, pix)
-                # Guardar temporal como JPEG
                 import io
-                buf = io.BytesIO()
-                # PyMuPDF no tiene save a BytesIO directo para JPEG,
-                # así que usamos el método directo si existe
-                # Alternativa: usar PIL para convertir
-                try:
-                    from PIL import Image
-                    img_temp = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                with Image.open(img_path) as img:
+                    if img.mode in ("RGBA", "P", "LA"):
+                        img = img.convert("RGB")
                     buf = io.BytesIO()
-                    img_temp.save(buf, format="JPEG", quality=calidad_jpg)
-                    buf.seek(0)
-                    pix = fitz.Pixmap(buf.read())
-                except ImportError:
-                    logger.warning("PIL no disponible, usando imagen original sin compresión")
+                    img.save(buf, format="JPEG", quality=calidad_jpg)
+                    img_stream = buf.getvalue()
 
-            # Crear página con dimensiones de la imagen
-            rect = fitz.Rect(0, 0, pix.width, pix.height)
-            page = doc.new_page(width=pix.width, height=pix.height)
-            page.insert_image(rect, filename=str(img_path))
+            # Crear página con dimensiones exactas de la imagen
+            rect = fitz.Rect(0, 0, width, height)
+            page = doc.new_page(width=width, height=height)
+            
+            if img_stream:
+                page.insert_image(rect, stream=img_stream)
+            else:
+                # Al pasar filename, PyMuPDF solo almacena la referencia y lee el archivo
+                # directo al disco al momento del doc.save(), gastando casi 0 RAM.
+                page.insert_image(rect, filename=str(img_path))
 
             logger.debug(f"Página añadida: {img_path.name}")
 
