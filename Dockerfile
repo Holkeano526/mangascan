@@ -35,7 +35,7 @@ RUN rm -rf /app/manga-image-translator/models && \
     ln -s /config/models /app/manga-image-translator/models
 
 # Copiar configuración del proyecto e instalar dependencias con uv
-COPY pyproject.toml .
+COPY pyproject.toml README.md ./
 RUN uv pip install --system --no-cache .
 
 # Copiar el código fuente
