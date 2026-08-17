@@ -24,33 +24,39 @@ def build_pdf_compressed():
         print(f"No se encontraron imagenes en {render_dir}")
         return
         
-    print(f"Encontradas {len(images)} paginas. Comprimiendo a JPEG para reducir tamaño...")
+    print(f"Encontradas {len(images)} paginas. Redimensionando y comprimiendo a JPEG...")
     
-    # Directorio temporal para guardar los JPGs optimizados
     jpg_dir = output_dir / 'temp_jpgs'
     jpg_dir.mkdir(exist_ok=True)
     
     jpg_files = []
     
+    # Ancho maximo HD estandar para lectura
+    MAX_WIDTH = 1400 
+    
     try:
-        # Convertir una por una a JPG para no usar mucha RAM
         for idx, img_path in enumerate(images):
             jpg_path = jpg_dir / f"page_{idx:04d}.jpg"
             jpg_files.append(str(jpg_path))
             
-            # Solo saltar si ya se comprimio en un intento anterior
-            if not jpg_path.exists():
-                with Image.open(img_path) as img:
-                    # Convertir a RGB (elimina transparencia, obligatorio para JPG)
-                    if img.mode != "RGB":
-                        img = img.convert("RGB")
-                    # quality=65 ofrece un buen balance de lectura vs tamaño
-                    img.save(jpg_path, "JPEG", quality=65)
+            with Image.open(img_path) as img:
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                    
+                # Calcular nuevo tamaño si excede el MAX_WIDTH
+                w, h = img.size
+                if w > MAX_WIDTH:
+                    ratio = MAX_WIDTH / w
+                    new_h = int(h * ratio)
+                    img = img.resize((MAX_WIDTH, new_h), Image.Resampling.LANCZOS)
+                
+                # Guardar con buena compresion y modo optimizado
+                img.save(jpg_path, "JPEG", quality=70, optimize=True)
             
             if (idx + 1) % 50 == 0:
-                print(f"  -> Comprimidas {idx + 1}/{len(images)} paginas...")
+                print(f"  -> Procesadas {idx + 1}/{len(images)} paginas...")
                 
-        print("Ensamblando el PDF final (esto sera rapido y ligero)...")
+        print("Ensamblando el PDF final ultra ligero...")
         with open(salida, "wb") as f:
             img2pdf.convert(jpg_files, outputstream=f)
             
@@ -62,7 +68,7 @@ def build_pdf_compressed():
                 pass
         jpg_dir.rmdir()
             
-        print(f"¡Terminado con exito! El PDF ha sido optimizado.")
+        print(f"¡Terminado con exito! Tu manga ahora tiene peso pluma.")
         
     except Exception as e:
         print(f"Ocurrio un error: {e}")
