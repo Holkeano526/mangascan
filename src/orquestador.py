@@ -156,6 +156,9 @@ async def procesar_tomo_async(
     from .detector_cascada import resumen as resumen_detector
     if (linea := resumen_detector()):
         logger.info(linea)
+    from .aceleracion import resumen as resumen_gpu
+    if (linea := resumen_gpu()):
+        logger.info(linea)
 
     # ── Ensamblaje: PDF final ──────────────────────────────────────────────
     logger.info("\n--- Generando PDF ---")

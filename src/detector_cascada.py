@@ -17,7 +17,8 @@ Validado el 25/11/2026 en 12 páginas no usadas para calibrar (220 cajas):
 de texto vertical se cortan en el borde de la ventana: no bajar de 128.
 
 Variables de entorno:
-  MANGASCAN_DETECTOR   "cascada" (por defecto) | "pytorch"
+  MANGASCAN_DETECTOR   "auto" (por defecto: iGPU si existe, si no cascada) |
+                       "gpu" | "cascada" | "pytorch"
   MANGASCAN_OV_MODEL   ruta del modelo INT8 (.xml); por defecto
                        /config/models/openvino/int8_c24.xml
 Si OpenVINO o el modelo faltan, o la cascada falla en una página, se usa
@@ -118,7 +119,15 @@ def activar() -> bool:
     """
     if _estado["activa"]:
         return True
-    modo = os.environ.get("MANGASCAN_DETECTOR", "cascada").strip().lower()
+    modo = os.environ.get("MANGASCAN_DETECTOR", "auto").strip().lower()
+    # auto: iGPU si existe (igual de precisa que PyTorch y más rápida); si no, cascada en CPU
+    if modo in ("auto", "gpu"):
+        from .aceleracion import activar_detector_gpu
+        if activar_detector_gpu():
+            return True
+        if modo == "gpu":
+            logger.warning("Detector: GPU pedida pero no disponible; se usa la cascada en CPU")
+        modo = "cascada"
     if modo != "cascada":
         logger.info(f"Detector: PyTorch (MANGASCAN_DETECTOR={modo})")
         return False

@@ -91,6 +91,9 @@ class TraductorMangaOptimizado:
             # Detector INT8 + PyTorch en cascada (vuelve a PyTorch solo si falta algo)
             from .detector_cascada import activar as activar_cascada
             activar_cascada()
+            # Inpainting en la iGPU si existe (si no, PyTorch en CPU como siempre)
+            from .aceleracion import activar_inpainting_gpu
+            activar_inpainting_gpu()
             # Parches de velocidad con resultado idéntico (colocación de textos)
             from .optimizaciones_mit import aplicar as aplicar_optimizaciones
             aplicar_optimizaciones()
