@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -76,37 +77,85 @@ async def procesar_tomo_async(
     if not imgs:
         raise RuntimeError("No se extrajeron imágenes del PDF o carpeta.")
 
-    # ── Procesamiento por página: detección → OCR → traducción → render ──
-    # Cada página se procesa entera y libera su contexto de RAM antes de la
-    # siguiente, acotando el uso de memoria en tomos largos (crítico en NAS).
+    # ── Procesamiento por página, en tubería ───────────────────────────────
+    # La traducción (DeepSeek, 5-20 s/página, solo red) se lanza en segundo plano
+    # y se solapa con el trabajo de CPU de otras páginas. Se detectan hasta
+    # ADELANTO páginas por delante del render, así viajan varias traducciones a la
+    # vez y la CPU no espera a la API. Orden con ADELANTO=3:
+    #   detectar N -> lanzar traducción N -> renderizar N-2 -> detectar N+1 ...
+    # Las etapas de CPU nunca corren a la vez (no compiten por núcleos ni RAM);
+    # como mucho hay ADELANTO+1 contextos de página vivos (sin imágenes, solo máscaras).
+    # Con el detector en cascada (25/11/2026) la CPU tarda menos que DeepSeek y con
+    # ADELANTO=1 la tubería esperaba a la API: por eso se subió a 3.
+    adelanto = max(1, int(os.environ.get("MANGASCAN_ADELANTO", "3")))
     pipeline = TraductorMangaOptimizado(api_key, font_size_min)
     fallos = []
-
     total = len(imgs)
-    logger.info("\n--- Procesando páginas (detección → traducción → render) ---")
+    t_inicio = time.time()
+    procesadas = 0
+
+    def _fallo(img_path: Path, render_img: Path, e: Exception) -> None:
+        logger.error(f"  ✗ {img_path.name}: {e}", exc_info=True)
+        fallos.append({"pagina": img_path.name, "error": str(e)})
+        pipeline.liberar_contexto(img_path.name)
+        shutil.copy2(img_path, render_img)
+
+    async def _terminar(pend: dict) -> None:
+        """Espera la traducción de una página ya detectada y la renderiza."""
+        nonlocal procesadas
+        img_path, render_img = pend["img"], pend["render"]
+        try:
+            await pend["tarea"]
+            await pipeline.renderizar_pagina(img_path, fast_mode=fast_mode)
+            logger.info(f"  ✓ {img_path.name} terminada")
+        except Exception as e:
+            _fallo(img_path, render_img, e)
+        procesadas += 1
+        transcurrido = time.time() - t_inicio
+        logger.info(
+            f"  Progreso: {pend['idx']}/{total} | {transcurrido / procesadas:.1f} s/página | "
+            f"transcurrido {formatear_tiempo(transcurrido)}"
+        )
+
+    logger.info("--- Procesando páginas (detección → traducción en paralelo → render) ---")
+    pendientes: deque[dict] = deque()
     for idx, img_path in enumerate(imgs, start=1):
         render_img = render_dir / f"{img_path.stem}_es{img_path.suffix}"
         if not force and render_img.exists():
             logger.info(f"✓ Página {idx}/{total}: {img_path.name} ya procesada, saltando")
             continue
 
-        inicio = time.time()
         logger.info(f"Página {idx}/{total}: {img_path.name}")
+        actual = None
         try:
-            res_pagina = await pipeline.preparar_pagina(img_path, fast_mode=fast_mode)
-            if res_pagina["bubbles"]:
-                await pipeline.renderizar_pagina(img_path, fast_mode=fast_mode)
-                logger.info(f"  ✓ {img_path.name} en {time.time() - inicio:.1f}s")
+            bubbles = await pipeline.detectar_pagina(img_path)
+            if bubbles:
+                tarea = asyncio.ensure_future(pipeline.traducir_pagina(img_path, bubbles))
+                # Ceder el control un instante: la tarea arranca y entrega la petición
+                # HTTP a su hilo YA. Sin esto no empezaba hasta el siguiente await real
+                # (el render), y las traducciones salían en tandas con la CPU esperando.
+                await asyncio.sleep(0)
+                actual = {"img": img_path, "render": render_img, "tarea": tarea, "idx": idx}
             else:
                 # Sin texto detectado: copiar la página original tal cual
                 pipeline.liberar_contexto(img_path.name)
                 shutil.copy2(img_path, render_img)
                 logger.info(f"  ✓ {img_path.name} sin texto, copiada")
         except Exception as e:
-            logger.error(f"  ✗ {img_path.name}: {e}", exc_info=True)
-            fallos.append({"pagina": img_path.name, "error": str(e)})
-            pipeline.liberar_contexto(img_path.name)
-            shutil.copy2(img_path, render_img)
+            _fallo(img_path, render_img, e)
+
+        if actual is not None:
+            pendientes.append(actual)
+        # Mientras las traducciones viajan, renderizar la más antigua
+        while len(pendientes) >= adelanto:
+            await _terminar(pendientes.popleft())
+
+    while pendientes:
+        await _terminar(pendientes.popleft())
+    logger.info(f"Páginas procesadas en {formatear_tiempo(time.time() - t_inicio)}")
+    from .detector_cascada import resumen as resumen_detector
+    if (linea := resumen_detector()):
+        logger.info(linea)
 
     # ── Ensamblaje: PDF final ──────────────────────────────────────────────
     logger.info("\n--- Generando PDF ---")

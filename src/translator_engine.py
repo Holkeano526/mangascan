@@ -88,6 +88,9 @@ class TraductorMangaOptimizado:
             logging.getLogger('manga_translator').setLevel(logging.ERROR)
             self._translator = MangaTranslator({"kernel_size": 3})
             logger.info("MangaTranslator instanciado (singleton)")
+            # Detector INT8 + PyTorch en cascada (vuelve a PyTorch solo si falta algo)
+            from .detector_cascada import activar as activar_cascada
+            activar_cascada()
         return self._translator
 
     def _get_config(self, mode: str = "full", fast_mode: bool = False):
@@ -117,14 +120,20 @@ class TraductorMangaOptimizado:
             cfg.render.direction = "h"
         return cfg
 
-    async def preparar_pagina(self, img_path: Path, fast_mode: bool = False) -> dict:
-        """Fase A: Detección, OCR y Traducción. Retorna los textos propuestos."""
+    async def detectar_pagina(self, img_path: Path) -> list[dict]:
+        """Fase A1 (CPU): detección, OCR y agrupado de líneas. NO traduce.
+
+        Deja el contexto de la página en self.contexts y devuelve las burbujas
+        ({id, src}). La traducción va aparte (traducir_pagina) para que el
+        orquestador pueda lanzarla en segundo plano mientras la CPU detecta la
+        página siguiente.
+        """
         translator = self._get_translator()
         from manga_translator import Context
         from manga_translator.utils import load_image
 
         img = Image.open(img_path)
-        cfg_detect = self._get_config("detect", fast_mode=fast_mode)
+        cfg_detect = self._get_config("detect")
         ctx = Context()
         ctx.input = img
         ctx.upscaled = img
@@ -135,27 +144,42 @@ class TraductorMangaOptimizado:
         ctx.textlines = await translator._run_ocr(cfg_detect, ctx)
         ctx.text_regions = await translator._run_textline_merge(cfg_detect, ctx)
 
-        bubbles = []
-        if not ctx.text_regions:
+        bubbles = [{"id": i, "src": region.text} for i, region in enumerate(ctx.text_regions or [])]
+        if not bubbles:
             logger.warning(f"  ⚠ Sin texto detectado en {img_path.name}")
-        else:
-            for i, region in enumerate(ctx.text_regions):
-                bubbles.append({"id": i, "src": region.text})
 
-            traducciones = await self._traducir_pagina_async(bubbles)
-            for i, region in enumerate(ctx.text_regions):
-                region.translation = traducciones.get(str(i), region.text)
-            for b in bubbles:
-                b["translation"] = traducciones.get(str(b["id"]), b["src"])
-
-        # Liberar memoria pesada (las imágenes) para no saturar RAM en pausas largas
+        # Liberar memoria pesada (las imágenes); renderizar_pagina las rehidrata
         ctx.input = None
         ctx.upscaled = None
         ctx.img_colorized = None
         ctx.img_rgb = None
         ctx.img_alpha = None
-        
+
         self.contexts[img_path.name] = ctx
+        return bubbles
+
+    async def traducir_pagina(self, img_path: Path, bubbles: list[dict]) -> list[dict]:
+        """Fase A2 (red): traduce las burbujas con DeepSeek y fija region.translation.
+
+        Corre en un hilo (run_in_executor), así que puede solaparse con el
+        trabajo de CPU de otra página.
+        """
+        ctx = self.contexts.get(img_path.name)
+        if ctx is None:
+            raise ValueError(f"Contexto no encontrado para {img_path.name}. ¿Se saltó detectar_pagina?")
+        if not bubbles:
+            return bubbles
+        traducciones = await self._traducir_pagina_async(bubbles)
+        for i, region in enumerate(ctx.text_regions):
+            region.translation = traducciones.get(str(i), region.text)
+        for bb in bubbles:
+            bb["translation"] = traducciones.get(str(bb["id"]), bb["src"])
+        return bubbles
+
+    async def preparar_pagina(self, img_path: Path, fast_mode: bool = False) -> dict:
+        """Fase A completa (detección + traducción) en serie. Se conserva por compatibilidad."""
+        bubbles = await self.detectar_pagina(img_path)
+        await self.traducir_pagina(img_path, bubbles)
         return {"pagina": img_path.name, "bubbles": bubbles}
 
     def liberar_contexto(self, nombre: str) -> None:

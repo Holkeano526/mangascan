@@ -22,7 +22,10 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Clonar manga-image-translator completo porque su paquete de pip está roto/incompleto.
-ARG MIT_REF=main
+# Fijado al commit con el que se construyó la imagen en producción (17/08/2026).
+# OJO: con MIT_REF=main el build falla desde nov-2026 (pide networkx 3.7 -> Python 3.12).
+# En el NAS no se reconstruye desde aquí: se usa Dockerfile.nas sobre la imagen congelada.
+ARG MIT_REF=95227a2bb0fd306cd4f0c104d57284026f991b3a
 RUN git clone https://github.com/zyddnys/manga-image-translator.git /app/manga-image-translator && \
     cd /app/manga-image-translator && git checkout "${MIT_REF}" && \
     pip install --no-cache-dir -r /app/manga-image-translator/requirements.txt
