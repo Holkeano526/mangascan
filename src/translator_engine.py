@@ -91,6 +91,9 @@ class TraductorMangaOptimizado:
             # Detector INT8 + PyTorch en cascada (vuelve a PyTorch solo si falta algo)
             from .detector_cascada import activar as activar_cascada
             activar_cascada()
+            # Parches de velocidad con resultado idéntico (colocación de textos)
+            from .optimizaciones_mit import aplicar as aplicar_optimizaciones
+            aplicar_optimizaciones()
         return self._translator
 
     def _get_config(self, mode: str = "full", fast_mode: bool = False):
@@ -104,6 +107,11 @@ class TraductorMangaOptimizado:
             cfg.render.renderer = "manga2eng_pillow"
             cfg.render.alignment = "center"
             cfg.render.direction = "h"
+            # Orden de burbujas por coordenadas, sin detectar viñetas. La detección
+            # de viñetas fallaba SIEMPRE con estas páginas ("Panel detection failed
+            # ... using simple text sorting") y caía a este mismo orden: costaba
+            # ~0,5 s/página y escribía una imagen de depuración. Resultado idéntico.
+            cfg.force_simple_sort = True
             self._config_cache = cfg
 
         cfg = self._config_cache
@@ -220,7 +228,9 @@ class TraductorMangaOptimizado:
         dest = render_dir / f"{img_path.stem}_es{img_path.suffix}"
         if dest.suffix.lower() in ('.jpg', '.jpeg'):
             result_img = result_img.convert('RGB')
-        result_img.save(dest)
+        # compress_level=1: PNG sin pérdida igual que antes, ~2x más rápido de
+        # codificar (0,45 -> 0,19 s/página) y en estas páginas incluso más pequeño.
+        result_img.save(dest, compress_level=1)
         
         # Limpiar contexto de la memoria
         del self.contexts[img_path.name]
