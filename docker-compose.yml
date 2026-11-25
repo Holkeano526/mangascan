@@ -31,6 +31,18 @@ services:
       # ¡Crítico para NAS! Guarda los gigabytes de modelos de IA de forma permanente
       # Así no se borran ni descargan de nuevo al actualizar el contenedor.
       - ./config:/config
+    # ── Aceleración con la GPU integrada de Intel (opcional) ─────────────────
+    # Requiere construir con Dockerfile.nas (trae el driver de Intel) y los
+    # modelos de OpenVINO en ./config/models/openvino (ver README).
+    # El gid es el del grupo "render" del host:  getent group render
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.nas
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "992"
+    # mem_limit: 6g      # los búferes de la iGPU cuentan como memoria del contenedor
     # OMV Nativo: Obliga al contenedor a correr como tu usuario para que puedas
     # mover y borrar los PDFs creados sin que te diga "Permission Denied" por ser de root.
     user: "${PUID:-1000}:${PGID:-100}"

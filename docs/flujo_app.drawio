@@ -1,0 +1,172 @@
+<mxfile host="drawio" agent="MangaScan docs" version="24.0.0">
+  <diagram id="flujo-mangascan" name="Flujo de MangaScan AI">
+    <mxGraphModel dx="1400" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="1180" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Título -->
+        <mxCell id="titulo" value="&lt;b&gt;MangaScan AI&lt;/b&gt; — flujo de una traducción" style="text;html=1;fontSize=22;fontColor=#1e1b4b;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="700" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitulo" value="PDF en japonés/coreano → PDF en español latino. Modelos locales (CPU + iGPU Intel) y DeepSeek solo para traducir." style="text;html=1;fontSize=13;fontColor=#475569;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="56" width="900" height="26" as="geometry" />
+        </mxCell>
+
+        <!-- 1. Entrada -->
+        <mxCell id="usuario" value="&lt;b&gt;Usuario&lt;/b&gt;&lt;br&gt;navegador" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;fontSize=12;fillColor=#e0e7ff;strokeColor=#4338ca;" vertex="1" parent="1">
+          <mxGeometry x="70" y="120" width="34" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="web" value="&lt;b&gt;Interfaz web&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;FastAPI · src/main.py · api/routes.py&lt;br&gt;subida, cola, log en vivo (SSE), biblioteca&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontColor=#1e1b4b;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="180" y="110" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cola" value="&lt;b&gt;Cola de trabajos&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;services/queue_manager.py&lt;br&gt;un tomo a la vez, en subproceso&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e7ff;strokeColor=#4338ca;fontColor=#1e1b4b;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="500" y="110" width="230" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="orq" value="&lt;b&gt;Orquestador&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;src/orquestador.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e1b4b;strokeColor=#8b5cf6;fontColor=#ffffff;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="790" y="110" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#4338ca;endArrow=block;fontSize=11;" edge="1" parent="1" source="usuario" target="web" value="sube PDF">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#4338ca;endArrow=block;" edge="1" parent="1" source="web" target="cola">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#4338ca;endArrow=block;" edge="1" parent="1" source="cola" target="orq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- 2. Extracción -->
+        <mxCell id="fase1" value="1 · Extracción (una vez)" style="swimlane;startSize=28;html=1;fillColor=#f1f5f9;strokeColor=#94a3b8;fontColor=#0f172a;fontSize=13;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="230" width="1160" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="extr" value="&lt;b&gt;PDF → imágenes&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;pdf_extractor.py · PyMuPDF&lt;br&gt;a la &lt;b&gt;resolución nativa&lt;/b&gt; del escaneo (techo 250 DPI)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=13;" vertex="1" parent="fase1">
+          <mxGeometry x="200" y="38" width="330" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="raw" value="raw/*.png" style="shape=folder;tabWidth=40;tabHeight=10;tabPosition=left;html=1;whiteSpace=wrap;fillColor=#fef9c3;strokeColor=#a16207;fontSize=12;" vertex="1" parent="fase1">
+          <mxGeometry x="620" y="44" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#64748b;endArrow=block;" edge="1" parent="fase1" source="extr" target="raw">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#4338ca;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="orq" target="extr">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="890" y="210" /><mxPoint x="405" y="210" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 3. Tubería por página -->
+        <mxCell id="fase2" value="2 · Tubería página a página (hasta 3 páginas por delante del render)" style="swimlane;startSize=28;html=1;fillColor=#f5f3ff;strokeColor=#8b5cf6;fontColor=#1e1b4b;fontSize=13;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="1160" height="500" as="geometry" />
+        </mxCell>
+
+        <!-- Fila A: detectar -->
+        <mxCell id="lblA" value="&lt;b&gt;A · Detectar&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;detectar_pagina()&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontColor=#4c1d95;" vertex="1" parent="fase2">
+          <mxGeometry x="20" y="50" width="125" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="det" value="&lt;b&gt;Detección de texto&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;DBNet · &lt;b&gt;iGPU FP16&lt;/b&gt; (OpenVINO)&lt;br&gt;respaldo: cascada INT8 → PyTorch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="170" y="42" width="250" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="ocr" value="&lt;b&gt;OCR&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;modelo 48px · CPU&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="470" y="42" width="170" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="merge" value="&lt;b&gt;Agrupar líneas&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;en burbujas · orden simple&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="690" y="42" width="190" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="eA1" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;" edge="1" parent="fase2" source="det" target="ocr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eA2" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;" edge="1" parent="fase2" source="ocr" target="merge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Fila B: traducir -->
+        <mxCell id="lblB" value="&lt;b&gt;B · Traducir&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;traducir_pagina()&lt;br&gt;en un hilo,&lt;br&gt;sin parar la CPU&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontColor=#4c1d95;" vertex="1" parent="fase2">
+          <mxGeometry x="20" y="175" width="125" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ds" value="&lt;b&gt;DeepSeek&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;API compatible OpenAI&lt;br&gt;JSON por página, hasta 3 en vuelo&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ff6b35;strokeColor=#c2410c;fontColor=#ffffff;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="690" y="165" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="valid" value="&lt;b&gt;Validación&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;rechaza kanji/kana y reintenta&lt;br&gt;backoff ante HTTP 429&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffedd5;strokeColor=#c2410c;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="400" y="175" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="eB1" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#c2410c;endArrow=block;fontSize=11;" edge="1" parent="fase2" source="merge" target="ds" value="textos originales">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eB2" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#c2410c;endArrow=block;fontSize=11;" edge="1" parent="fase2" source="ds" target="valid" value="español">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Fila C: renderizar -->
+        <mxCell id="lblC" value="&lt;b&gt;C · Renderizar&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;renderizar_pagina()&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontColor=#4c1d95;" vertex="1" parent="fase2">
+          <mxGeometry x="20" y="320" width="125" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="mask" value="&lt;b&gt;Máscara&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;refinado · CPU&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="170" y="312" width="150" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="inp" value="&lt;b&gt;Borrar texto original&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;inpainting AOT · &lt;b&gt;iGPU FP16&lt;/b&gt;&lt;br&gt;respaldo: PyTorch&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#15803d;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="370" y="312" width="230" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="txt" value="&lt;b&gt;Dibujar texto en español&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;colocación vectorizada (numpy) · CPU&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#1d4ed8;fontSize=13;" vertex="1" parent="fase2">
+          <mxGeometry x="650" y="312" width="250" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="render" value="render/*_es.png" style="shape=folder;tabWidth=40;tabHeight=10;tabPosition=left;html=1;whiteSpace=wrap;fillColor=#fef9c3;strokeColor=#a16207;fontSize=12;" vertex="1" parent="fase2">
+          <mxGeometry x="960" y="318" width="150" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="eC1" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;" edge="1" parent="fase2" source="mask" target="inp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eC2" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;" edge="1" parent="fase2" source="inp" target="txt">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eC3" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;" edge="1" parent="fase2" source="txt" target="render">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eBC" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#c2410c;endArrow=block;dashed=1;fontSize=11;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="fase2" source="valid" target="txt" value="traducción lista">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="515" y="280" /><mxPoint x="775" y="280" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="eAC" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#475569;endArrow=block;dashed=1;fontSize=11;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="fase2" source="det" target="mask" value="máscara y cajas">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <Array as="points"><mxPoint x="157" y="75" /><mxPoint x="157" y="290" /><mxPoint x="245" y="290" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Nota de solapamiento -->
+        <mxCell id="nota" value="&lt;b&gt;Orden en el tiempo:&lt;/b&gt; detectar N → lanzar traducción N → renderizar N‑2 → detectar N+1…&lt;br&gt;La GPU y la CPU nunca procesan dos etapas de cálculo a la vez; las traducciones viajan mientras tanto.&lt;br&gt;Con la iGPU: ~5 s/página (antes 49 s). Leyenda: &lt;font color=&quot;#15803d&quot;&gt;■&lt;/font&gt; iGPU · &lt;font color=&quot;#1d4ed8&quot;&gt;■&lt;/font&gt; CPU · &lt;font color=&quot;#c2410c&quot;&gt;■&lt;/font&gt; red" style="shape=note;whiteSpace=wrap;html=1;size=14;fillColor=#fffbeb;strokeColor=#d97706;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="fase2">
+          <mxGeometry x="170" y="405" width="940" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#a16207;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="raw" target="det">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="720" y="356" /><mxPoint x="335" y="356" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4. Ensamblaje -->
+        <mxCell id="fase3" value="3 · Ensamblaje (una vez)" style="swimlane;startSize=28;html=1;fillColor=#f1f5f9;strokeColor=#94a3b8;fontColor=#0f172a;fontSize=13;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="900" width="1160" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="pdfb" value="&lt;b&gt;Imágenes → PDF&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;pdf_builder.py · JPEG + img2pdf en streaming (sin OOM)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#64748b;fontSize=13;" vertex="1" parent="fase3">
+          <mxGeometry x="560" y="40" width="330" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="pdf" value="&lt;b&gt;translated_*.pdf&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Biblioteca / descarga&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#1e1b4b;strokeColor=#8b5cf6;fontColor=#ffffff;fontSize=13;" vertex="1" parent="fase3">
+          <mxGeometry x="200" y="36" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#64748b;endArrow=block;" edge="1" parent="fase3" source="pdfb" target="pdf">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#a16207;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="render" target="pdfb">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1075" y="885" /><mxPoint x="765" y="885" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;html=1;labelBackgroundColor=#ffffff;strokeColor=#4338ca;endArrow=block;dashed=1;fontSize=11;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="pdf" target="web" value="descarga">
+          <mxGeometry x="-0.9" relative="1" as="geometry">
+            <Array as="points"><mxPoint x="30" y="973" /><mxPoint x="30" y="150" /></Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
