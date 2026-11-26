@@ -143,7 +143,7 @@ La rama `main` de manga-image-translator exige hoy Python 3.12. Por eso `Dockerf
 |---|---|---|
 | `DEEPSEEK_API_KEY` | — | Clave de la API de traducción (obligatoria). |
 | `DEEPSEEK_API_URL` | `https://api.deepseek.com/chat/completions` | Cualquier endpoint compatible con OpenAI. |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Nombre del modelo. |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | Nombre del modelo (antes `deepseek-v4-flash`, que DeepSeek ya solo redirige). |
 | `MANGASCAN_DETECTOR` | `auto` | `auto` (iGPU → cascada INT8 → PyTorch), `gpu`, `cascada` o `pytorch`. |
 | `MANGASCAN_GPU` | `1` | `0` desactiva la iGPU. |
 | `MANGASCAN_ADELANTO` | `3` | Páginas detectadas por delante del render (traducciones simultáneas). |

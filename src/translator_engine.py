@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 # ─── DeepSeek constants ───────────────────────────────────────────────
 API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
-MODELO = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash")
+# "deepseek-flash" es el nombre actual (V4.1-Flash-1017, nov-2026). "deepseek-v4-flash" ya no
+# aparece en /models: DeepSeek aún lo redirige a deepseek-flash, pero puede dejar de hacerlo.
+MODELO = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
 PATRON_ASIATICO = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]')
 
 SYSTEM_PROMPT = (
