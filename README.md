@@ -1,254 +1,234 @@
-# Traductor de Manga Local (Japonés a Español Latino)
+# MangaScan AI — Traductor de manga local (japonés/coreano → español latino)
 
-![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
 ![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)
-![Model](https://img.shields.io/badge/model-DeepSeek_V4_Flash-orange.svg)
+![Model](https://img.shields.io/badge/traducción-DeepSeek_V4_Flash-orange.svg)
+![GPU](https://img.shields.io/badge/iGPU_Intel-OpenVINO-0071c5.svg)
 
-Una herramienta automatizada de código abierto para escanear, reconocer, traducir y renderizar mangas desde su idioma original (japonés) al español latino de forma desatendida. 
+Herramienta de código abierto que **detecta, lee, traduce y redibuja** los textos de un manga en PDF y devuelve el PDF en español latino, de forma desatendida.
 
-Este proyecto combina un procesamiento de imágenes y reconocimiento óptico de caracteres (OCR) ejecutado de forma 100% **local** (ideal para NAS o servidores con CPU o GPU integrada) con la poderosa y económica API de **DeepSeek V4 Flash** encargada exclusivamente de la traducción del texto.
+Todo el procesamiento de imagen (detección de globos, OCR, borrado del texto original y dibujo del texto nuevo) corre **en local**, en CPU y opcionalmente en la **GPU integrada de Intel** con OpenVINO. Solo la traducción se delega a la API de **DeepSeek V4 Flash** (o cualquier API compatible con OpenAI).
 
-## Características Principales
-- **Extracción Inteligente:** Toma un archivo PDF (o una carpeta con imágenes) y lo prepara para traducción sin comprimirlo excesivamente.
-- **OCR Local:** Utiliza [manga-image-translator](https://github.com/zyddnys/manga-image-translator) para detectar los globos de diálogo y extraer el texto en japonés, sin costo de API.
-- **Inpainting Automático:** Limpia los globos de texto originales en la imagen, regenerando el fondo cuando el texto está encima de dibujos.
-- **Traducción Contextual:** Envía todos los textos de una página a la vez al modelo elegido (por defecto `deepseek-v4-flash`) para que traduzca con el contexto completo, aplicando un tono de manga natural y coloquial. Es **compatible con cualquier IA que soporte la API de OpenAI** (Anthropic, Gemini, Llama local, etc).
-- **Validación Anti-Asiática Estricta:** Incorpora una capa de seguridad para rechazar y reintentar si el modelo intenta devolver caracteres asiáticos en la traducción.
-- **Renderizado Dinámico:** Redibuja el texto en español sobre la imagen ajustando la fuente.
-- **Ensamblaje a PDF:** Reconstruye la obra completa y genera un archivo final `_traducido.pdf` conservando la calidad de lectura original.
-- **Arquitectura Modular (FastAPI) y Asíncrona:** Código organizado que delega la carga pesada a procesos asíncronos (`asyncio`), evitando bloqueos en la interfaz web incluso al traducir múltiples mangas en paralelo.
-- **Manejo Eficiente de Memoria (NAS Optimized):** Ensamblaje iterativo del PDF usando `img2pdf` que previene el cierre forzoso (OOM Killer) que suele ocurrir al intentar cargar cientos de imágenes en la RAM al mismo tiempo.
-- **Interfaz 100% Offline:** Las fuentes tipográficas están **autohospedadas** (`src/static/fonts/`, licencia OFL); la web no depende de Google Fonts ni de ninguna CDN externa, ideal para un NAS sin salida a internet.
+Está pensada para un NAS o un HomeLab con poca RAM y sin GPU dedicada.
 
----
+## Características
 
-## ⚙️ Arquitectura y Flujo de Procesamiento
-
-El código está diseñado como un **pipeline asíncrono página por página**: los pesados modelos de IA se cargan **una sola vez** en memoria (patrón Singleton) y se reutilizan, y cada página se procesa por completo (detección → OCR → traducción → render) **liberando su memoria antes de pasar a la siguiente**. Esto acota el uso de RAM en tomos largos, algo crítico en hardware limitado como un NAS. Las imágenes intermedias se escriben en disco de forma temporal y se purgan automáticamente al finalizar.
-
-```mermaid
-graph TD
-    A[Sube PDF en UI Web] -->|web_server.py| B(orquestador.py)
-    B -->|Envía PDF| C[1. Extracción]
-    
-    subgraph Fase 1
-    C -->|pdf_extractor.py| D[Imágenes extraídas]
-    end
-    
-    D --> E[2. Traducción Neural]
-    
-    subgraph Fase 2: El Motor Core
-    E -->|translator_engine.py| F[Detección de Texto]
-    F -->|OCR Offline| G[Texto Japonés Extraído]
-    G -->|Llamada Asíncrona API| H((DeepSeek V4 Flash))
-    H -->|Texto Español Latino| I[Inpainting Limpieza]
-    I --> J[Renderizado Texto]
-    end
-    
-    J -->|Páginas Listas| K[3. Ensamblaje]
-    
-    subgraph Fase 3
-    K -->|pdf_builder.py| L[PDF Final Traducido]
-    end
-    
-    L --> M[Descarga en Interfaz]
-    
-    classDef file fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#fff;
-    classDef api fill:#FF6B35,stroke:#fff,stroke-width:2px,color:#fff;
-    class C,D,E,F,G,I,J,K,L file;
-    class H api;
-```
-
-### Módulos del Sistema:
-
-1. **`web_server.py` (Interfaz):** Servidor FastAPI que monta la interfaz gráfica web y enruta la subida del PDF hacia el orquestador en un proceso en segundo plano (para no bloquear la página web).
-2. **`orquestador.py` (Director):** El cerebro organizativo. Carga las configuraciones, inicializa la inteligencia artificial una única vez (patrón Singleton) para que no haya que recargar los pesados modelos a la memoria RAM por cada página, y llama en orden a las herramientas de extracción, traducción y ensamblaje.
-3. **`pdf_extractor.py` (Fase de Ingesta):** Descomprime el PDF del usuario y guarda temporalmente cada página como una imagen JPG/PNG (200-300 DPI) para que la IA la pueda observar.
-4. **`translator_engine.py` (Motor de Traducción):** La joya de la corona. Mantiene vivos los algoritmos de detección visual y OCR, inyecta nuestra función propia que conecta con DeepSeek a la mitad del proceso, valida la calidad de la traducción, usa el algoritmo *LaMa* para borrar los textos originales de la imagen, e imprime los textos en español en los globos.
-5. **`pdf_builder.py` (Fase de Cierre):** Agarra todas las imágenes generadas por el motor y las vuelve a coser en un PDF de alta calidad, listo para que te lo lleves.
+- **Calidad de origen:** cada página se extrae a la **resolución nativa** del escaneo, sin ampliarla ni recomprimirla de más.
+- **Visión local:** usa [manga-image-translator](https://github.com/zyddnys/manga-image-translator) para detectar los globos, leer el texto (OCR) y borrarlo de la imagen, sin coste de API.
+- **Aceleración por iGPU Intel:** el detector y el borrado (inpainting) corren en la GPU integrada con OpenVINO FP16. Si la GPU no existe o falla, usa la CPU sola.
+- **Traducción con contexto:** envía todos los textos de una página juntos en un JSON, para que el modelo traduzca con el contexto de la escena.
+- **Validación anti-asiática:** si el modelo devuelve kanji, kana o hanzi en la traducción, la rechaza y reintenta.
+- **Tubería en paralelo:** mientras DeepSeek traduce una página, la CPU y la GPU ya trabajan en las siguientes.
+- **Apta para un NAS:**
+  - Modelos cargados una sola vez y memoria acotada por página.
+  - PDF ensamblado en streaming, sin cargar todo el tomo en RAM.
+- **Interfaz web 100 % offline:** cola de trabajos, log en vivo, biblioteca y descargas. Las fuentes están autohospedadas: sin CDN ni Google Fonts.
 
 ---
 
-## Requisitos Previos
+## ⚙️ Flujo de la aplicación
 
-- Python 3.11 o superior (si se instala de forma manual).
-- Cuenta y API Key de **DeepSeek**.
-- Docker (opcional, pero fuertemente recomendado para despliegues en servidores NAS).
+<p align="center">
+  <img src="docs/flujo_app.drawio.svg" alt="Flujo de MangaScan AI: interfaz web, cola, extracción a resolución nativa, tubería página a página con detección en iGPU, OCR, traducción con DeepSeek, inpainting en iGPU y render, y ensamblaje del PDF" width="100%">
+</p>
+
+> El diagrama es un `.drawio.svg`: se ve en GitHub y se edita abriéndolo directamente en [draw.io](https://app.diagrams.net/) o en draw.io Desktop. La fuente también está en [`docs/flujo_app.drawio`](docs/flujo_app.drawio).
+
+Cada tomo pasa por tres fases:
+
+1. **Extracción (una vez).** `pdf_extractor.py` convierte cada página en PNG a la resolución de su imagen escaneada, con 250 DPI como techo. Los PDF de manga suelen ser una imagen por página; renderizarlos a DPI fijo los ampliaba hasta 6,8 veces sin ganar detalle.
+2. **Tubería página a página.** `orquestador.py` encadena tres etapas y mantiene hasta 3 páginas detectadas por delante del render. Orden: detectar N → lanzar la traducción de N → renderizar N‑2 → detectar N+1…
+   - **A · Detectar** (`detectar_pagina`): detección de texto (DBNet, en la iGPU), OCR (modelo `48px`, CPU) y agrupado de líneas en burbujas.
+   - **B · Traducir** (`traducir_pagina`): petición a DeepSeek en un hilo, para que la CPU no espere. Incluye reintentos con *backoff* ante `HTTP 429` y la validación anti-asiática.
+   - **C · Renderizar** (`renderizar_pagina`): refinado de la máscara, borrado del texto original (inpainting AOT, en la iGPU) y dibujo del texto en español.
+3. **Ensamblaje (una vez).** `pdf_builder.py` comprime las páginas a JPEG y las cose con `img2pdf` en streaming. El PDF final queda en la Biblioteca de la web.
+
+Las páginas sin texto se copian tal cual. Si una página falla, se conserva la original y el resto del tomo sigue.
+
+### Módulos
+
+| Archivo | Función |
+|---|---|
+| `src/main.py`, `src/api/routes.py` | Servidor FastAPI: interfaz web, subida, log en vivo (SSE), biblioteca, descargas y cancelación. |
+| `src/services/queue_manager.py` | Cola de trabajos. Lanza un tomo a la vez en un subproceso. |
+| `src/orquestador.py` | Director del pipeline: extracción, tubería por páginas, ensamblaje y resumen. |
+| `src/pdf_extractor.py` | PDF → PNG a resolución nativa (`zoom_nativo`). |
+| `src/translator_engine.py` | Motor: mantiene vivo manga-image-translator (singleton), separa detección, traducción y render, y llama a DeepSeek. |
+| `src/aceleracion.py` | Detector e inpainting en la iGPU Intel (OpenVINO FP16), con caché de kernels y vuelta a CPU. |
+| `src/detector_cascada.py` | Elección del detector: iGPU → cascada INT8 en CPU (INT8 propone, PyTorch confirma las zonas dudosas) → PyTorch. |
+| `src/optimizaciones_mit.py` | Parches de velocidad sobre manga-image-translator con **resultado idéntico**, como la colocación de textos vectorizada. |
+| `src/pdf_builder.py` | Ensamblaje del PDF sin picos de memoria. |
+| `src/rescue.py` | Rehace el PDF final si un trabajo terminó las páginas pero falló al ensamblar. |
+| `tools/` | Regenerar los modelos de OpenVINO (`convertir_modelos_openvino.py`, `cuantizar_detector_int8.py`) y evaluar la cascada. |
 
 ---
 
-## 🐳 Instalación Recomendada: Docker Desktop (Windows / Mac / NAS)
+## 🚀 Rendimiento
 
-Debido a que el motor de IA (`manga-image-translator`) utiliza librerías nativas antiguas y pesadas (PyTorch, numpy 1.26, OpenVINO, pydensecrf) que **carecen de instaladores pre-compilados para versiones recientes de Python (como 3.14)**, intentar ejecutar este proyecto de forma nativa en Windows o WSL a menudo resulta en errores catastróficos del compilador de Rust o C++.
+Medido en un NAS con **Intel Core i5-1135G7** (4 núcleos, iGPU Iris Xe) y 4 CPU asignadas al contenedor, en régimen estable:
 
-Para evitar dolores de cabeza, **la forma oficial y recomendada de usar MangaScan AI es a través de Docker Compose**. El contenedor ya incluye Python 3.11 pre-configurado y todas las dependencias compiladas.
+| Versión | s/página | Tomo de 151 páginas |
+|---|---|---|
+| Original (2 CPU, extracción a 250 DPI, pasos en serie) | 49 | 2 h 6 min |
+| Resolución nativa + 4 CPU + DeepSeek en paralelo | 13,2 | ~33 min |
+| + detector INT8 en cascada + peticiones inmediatas | 10,4 | ~26 min |
+| + **detector e inpainting en la iGPU** | **5,2** | **~15 min** |
 
-### Pasos con Docker Desktop (o Servidor Linux):
+Las páginas con mucho texto tardan más, porque el OCR corre en CPU.
 
-1. **Clonar el repositorio:**
+**Cómo se comprobó la calidad:**
+
+| Componente | Comparado con PyTorch en CPU |
+|---|---|
+| Detector en iGPU | 0 de 220 cajas de texto perdidas, sin falsos positivos |
+| Inpainting en iGPU | diferencia media 0,004/255 por píxel |
+| Parches de `optimizaciones_mit.py` | páginas idénticas píxel a píxel |
+
+---
+
+## Requisitos
+
+- Docker (recomendado) o Linux con **Python 3.11**.
+- Una API key de **DeepSeek** (o de otro proveedor compatible con OpenAI).
+- Opcional: CPU Intel con **GPU integrada** (Gen12 / Tiger Lake o posterior) para la aceleración.
+
+---
+
+## 🐳 Instalación con Docker (recomendada)
+
+El motor de visión (`manga-image-translator`) depende de librerías nativas pesadas (PyTorch, numpy 1.26, pydensecrf) que no tienen binarios para Python reciente. **Docker es la forma soportada**: la imagen ya trae Python 3.11 y todo compilado.
+
+1. **Clonar el repositorio**
    ```bash
    git clone https://github.com/Holkeano526/mangascan.git
    cd mangascan
    ```
 
-2. **Configurar tu API Key:**
-   Crea un archivo `.env` en la raíz del proyecto (junto a `docker-compose.yml`) con tu clave de DeepSeek. Docker Compose la inyecta automáticamente en el contenedor:
+2. **Configurar la API key** en un archivo `.env` junto a `docker-compose.yml`:
    ```env
    DEEPSEEK_API_KEY=sk-tu_api_key_aqui
    ```
-   > ⚠️ **No** escribas la clave directamente en `docker-compose.yml`: ese archivo está rastreado por git y expondría tu clave al subirlo a GitHub.
+   > ⚠️ **No** la escribas en `docker-compose.yml`: ese archivo está en git y la publicarías.
 
-3. **Levantar el proyecto:**
-   Abre una terminal en la carpeta del proyecto y ejecuta:
+3. **Levantar el servicio**
    ```bash
    docker compose up --build -d
    ```
-   *(Docker descargará todo el entorno, compilará las librerías necesarias de IA y lanzará el servidor en segundo plano).*
 
-4. **¡A Traducir!**
-   Abre tu navegador web y entra a **[http://localhost:8000](http://localhost:8000)**. 
-   Verás la interfaz gráfica de MangaScan AI. Sube tu PDF, observa el progreso en tiempo real y descarga el resultado.
+4. **Traducir:** abre **http://localhost:8001**, sube un PDF, sigue el progreso en vivo y descárgalo desde la Biblioteca.
 
-> **💡 Nota sobre la Caché:** La configuración de `docker-compose.yml` ya está diseñada para guardar de forma permanente los gigabytes de modelos de IA en la carpeta `./config` de tu disco duro. Así no tendrás que volver a descargarlos cada vez que reinicies el contenedor.
+> 💡 Los modelos (varios GB) se guardan en `./config`, así no se descargan de nuevo al recrear el contenedor.
 
----
+### Aceleración con la iGPU Intel (opcional)
 
-## 💻 Instalación Local Avanzada (Bajo tu propio riesgo)
+1. **Driver en la imagen.** Usa `Dockerfile.nas`, que añade el runtime oficial de Intel (`compute-runtime` + IGC, verificados por SHA-256 en `tools/igpu.sha256`). Debian 13 no lo incluye, y la rama "legacy1" de Intel no reconoce Tiger Lake.
+2. **Acceso a la GPU.** En `docker-compose.yml`, descomenta el bloque de la GPU (`/dev/dri` y el grupo `render` del host). El número del grupo se obtiene con `getent group render`.
+3. **Modelos.** Genera los modelos de OpenVINO en `./config/models/openvino/` con `tools/convertir_modelos_openvino.py`. Necesita más de 4 GB de RAM; el comando está en la cabecera del script.
+4. **Memoria.** Con GPU, da al contenedor **6 GB**: los búferes de la iGPU cuentan como memoria compartida del contenedor (~1,8 GB).
 
-Si eres un desarrollador avanzado usando **Linux nativo con Python 3.11 estrictamente** (No funciona bien en Windows nativo ni Python >=3.12 sin compilación manual cruzada):
+Al arrancar, el log muestra `Detector: iGPU Intel (OpenVINO FP16)` e `Inpainting: iGPU Intel (OpenVINO FP16)`. La primera vez se compilan los kernels (~15 s); después se cargan de la caché en `./config/cache/openvino`.
 
-1. **Crear y activar el entorno virtual:**
-   ```bash
-   python3.11 -m venv venv
-   source venv/bin/activate
-   ```
+> Si la GPU la usa también un servidor multimedia (por ejemplo Jellyfin con QSV), MangaScan irá algo más lento mientras coincidan, sin perder calidad.
 
-2. **Instalar dependencias:**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+### Imagen congelada (despliegue en NAS)
 
-3. **Configurar API Key:**
-   Crea un archivo llamado `.env` en la **raíz del proyecto** (la misma carpeta donde está este README) con el siguiente contenido:
-   ```env
-   DEEPSEEK_API_KEY="sk-tu_api_key_aqui"
-   ```
-   Alternativamente, puedes exportar la variable de entorno directamente en tu terminal:
-   ```bash
-   export DEEPSEEK_API_KEY="sk-tu_api_key_aqui"
-   ```
-
-## Uso (Web App Premium)
-
-El sistema ahora cuenta con una **interfaz web premium y responsiva** alojada localmente, que incluye:
-- Animaciones fluidas, modo oscuro y diseño de cristal (Glassmorphism).
-- Botón de cancelación inmediata para interrumpir la subida de archivos grandes.
-- Modal de confirmación para pre-visualizar el archivo y activar el **Modo Rápido** (Fast Mode) que desactiva el redibujado de cajas, acelerando enormemente el proceso.
-- Seguimiento en tiempo real con consola integrada y barra de progreso.
-
-### 1. Arrancar el Servidor
-Activa tu entorno virtual y arranca el backend de FastAPI:
-
-```bash
-# Activar entorno
-source venv/bin/activate
-
-# Arrancar la web
-uvicorn src.web_server:app --host 0.0.0.0 --port 8000
-```
-
-### 2. Usar la Interfaz
-1. Abre tu navegador y dirígete a la IP de tu NAS (o `http://localhost:8000` si estás en la misma máquina).
-2. Arrastra y suelta tu manga PDF.
-3. Observa la terminal en vivo y la barra de progreso mientras el motor de traducción trabaja.
-4. Una vez finalice, haz clic en el botón de descarga iluminado para llevarte tu PDF traducido.
-
-### Ejecución en NAS (OpenMediaVault) con Docker Compose
-Si prefieres correrlo de manera aislada (ideal para tu NAS), he incluido un `docker-compose.yml` pre-optimizado para OpenMediaVault, que maneja tus permisos (PUID/PGID) y enruta los modelos pesados a una carpeta persistente para que no saturen tu disco.
-
-```bash
-# Simplemente levanta el contenedor en segundo plano
-docker-compose up -d
-```
-Accede a `http://IP_DE_TU_NAS:8000` y listo.
+La rama `main` de manga-image-translator exige hoy Python 3.12. Por eso `Dockerfile` la fija al commit `95227a2b`, y el despliegue del NAS usa `Dockerfile.nas` sobre una imagen base ya construida y probada (`mangascan-ai:base-20260817`), a la que solo añade capas.
 
 ---
 
-## 🚑 Script Salvavidas (`rescue.py`)
+## ⚙️ Variables de entorno
 
-Si por alguna razón (como un reinicio inesperado o interrupción manual) la traducción de un manga finalizó pero falló en el último paso de **ensamblaje del PDF**, no tienes que empezar de cero ni volver a traducir todas las páginas.
+| Variable | Por defecto | Para qué |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | — | Clave de la API de traducción (obligatoria). |
+| `DEEPSEEK_API_URL` | `https://api.deepseek.com/chat/completions` | Cualquier endpoint compatible con OpenAI. |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Nombre del modelo. |
+| `MANGASCAN_DETECTOR` | `auto` | `auto` (iGPU → cascada INT8 → PyTorch), `gpu`, `cascada` o `pytorch`. |
+| `MANGASCAN_GPU` | `1` | `0` desactiva la iGPU. |
+| `MANGASCAN_ADELANTO` | `3` | Páginas detectadas por delante del render (traducciones simultáneas). |
+| `OMP_NUM_THREADS`, `MKL_NUM_THREADS` | `4` | Hilos de inferencia en CPU. Iguálalos a las CPU asignadas y a los núcleos **físicos**: con más hilos que CPU, el contenedor se frena a sí mismo. |
 
-Puedes utilizar el script `rescue.py` para buscar las imágenes que ya están traducidas en la carpeta de trabajo, comprimirlas eficientemente, y volver a generar el PDF final.
+### Usar otra IA (OpenAI, Anthropic, Gemini, modelos locales)
 
-### ¿Cómo usarlo?
-Simplemente ejecuta el script dentro del contenedor en ejecución:
+```env
+DEEPSEEK_API_URL="https://api.openai.com/v1/chat/completions"
+DEEPSEEK_API_KEY="sk-tu_nueva_clave"
+DEEPSEEK_MODEL="gpt-4o-mini"
+```
+
+Con LM Studio u Ollama, la URL sería del tipo `http://localhost:1234/v1/chat/completions`.
+
+### Ajustar el estilo de la traducción
+
+Edita la constante `SYSTEM_PROMPT` en `src/translator_engine.py`: tono, honoríficos, lenguaje neutro, etc.
+
+### Sensibilidad de la detección
+
+Los umbrales están en `_get_config` de `src/translator_engine.py`: `cfg.detector.text_threshold` y `cfg.detector.box_threshold`. La configuración se comparte entre detección y render, así que solo hay que cambiarla en un sitio. Más detalles en la [documentación de manga-image-translator](https://github.com/zyddnys/manga-image-translator).
+
+---
+
+## 💻 Instalación local (avanzado)
+
+Solo en **Linux con Python 3.11**:
+
+```bash
+python3.11 -m venv venv && source venv/bin/activate
+git clone https://github.com/zyddnys/manga-image-translator.git
+(cd manga-image-translator && git checkout 95227a2bb0fd306cd4f0c104d57284026f991b3a && pip install -r requirements.txt)
+export PYTHONPATH="$PWD/manga-image-translator"
+pip install .
+echo 'DEEPSEEK_API_KEY="sk-tu_api_key_aqui"' > .env
+uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
+También se puede traducir sin la web:
+
+```bash
+python -m src.orquestador tomo.pdf --work-dir ./work/tomo --output tomo_es.pdf
+```
+
+---
+
+## 🚑 Script de rescate (`rescue.py`)
+
+Si un trabajo tradujo todas las páginas pero falló al **ensamblar el PDF** (por ejemplo, por un reinicio), `rescue.py` rehace el PDF a partir de las páginas ya traducidas, sin volver a traducir:
+
 ```bash
 docker exec mangascan-ai python src/rescue.py
 ```
 
-El script automáticamente:
-1. Buscará tareas que tengan imágenes procesadas.
-2. Redimensionará y comprimirá las imágenes para que el PDF sea muy ligero (aprox. 100-250MB para mangas grandes, en lugar de +1GB).
-3. Ensamblará las páginas de forma amigable con la RAM y generará el archivo PDF final optimizado.
-
 ---
 
-## 🛠️ Personalización Avanzada
+## 🧪 Tests
 
-### Usar otras Inteligencias Artificiales (Anthropic, Gemini, OpenAI, Locales)
-MangaScan AI está diseñado utilizando la estructura estándar de mensajes de OpenAI. Esto significa que **puedes usar prácticamente cualquier otra IA del mercado** simplemente apuntando la URL base hacia otro proveedor.
-
-Para hacerlo, define las siguientes variables en tu archivo `.env` (nunca la clave en `docker-compose.yml`, que se sube a git):
-```env
-# Por defecto es "https://api.deepseek.com/chat/completions"
-DEEPSEEK_API_URL="https://api.openai.com/v1/chat/completions"
-# Coloca aquí tu clave del nuevo proveedor
-DEEPSEEK_API_KEY="sk-tu_nueva_clave"
-# El nombre exacto del modelo que vayas a usar
-DEEPSEEK_MODEL="gpt-4o-mini"
+```bash
+pip install pytest pymupdf numpy requests Pillow python-dotenv fastapi uvicorn python-multipart
+pytest
 ```
-*(Nota: Si usas servidores locales como LM Studio o Ollama, tu URL sería algo como `http://localhost:1234/v1/chat/completions`)*
 
-### Modificar el Prompt de la Inteligencia Artificial
-El comportamiento del modelo (tono, estilo y reglas de traducción) puede ser modificado a tu gusto editando el archivo `src/translator_engine.py`. Busca la constante `SYSTEM_PROMPT` y ajusta las instrucciones para que el modelo hable de manera más formal, use jerga específica o mantenga honoríficos japoneses.
+Cubren la lógica pura, sin modelos de ML:
+- el parseo de la traducción,
+- la resolución nativa,
+- la equivalencia exacta de la colocación de textos vectorizada,
+- que los módulos importan.
 
-### Configuración de Globos de Texto (Sensibilidad)
-Por defecto, el sistema viene configurado con un "Punto Medio" quirúrgico para encontrar textos en burbujas inusuales (como formas hexagonales) y textos dispersos. Si notas que ignora textos muy claros o une párrafos que no debería, puedes modificar los umbrales de detección.
-Estos valores viven en `src/translator_engine.py`, dentro del método `_get_config` (busca `cfg.detector.text_threshold` y `cfg.detector.box_threshold`). La configuración se cachea y se comparte entre las fases de detección y renderizado, así que solo hay un lugar que editar y ambas fases quedan siempre sincronizadas automáticamente.
-
-> **Nota:** Para entender más sobre cómo estos valores afectan el tamaño y fusión de las cajas de texto (por ejemplo usando `unclip_ratio`), te recomendamos consultar la [documentación oficial de manga-image-translator](https://github.com/zyddnys/manga-image-translator).
+La CI los ejecuta en cada PR.
 
 ---
 
-## ⚠️ Limitaciones Conocidas
+## ⚠️ Limitaciones conocidas
 
-* **Idiomas Soportados:** El modelo de OCR (`48px`) está enfocado principalmente en Japonés, Coreano, y algunas variantes de Chino. **No soporta de manera confiable todos los idiomas asiáticos** (ejemplo: puede arrojar basura o caracteres mezclados al intentar leer Tailandés).
-* **Textos Muy Juntos:** Dependiendo de la diagramación del manga, el sistema de detección puede fusionar diálogos adyacentes si los globos están excesivamente pegados. Si esto ocurre, revisar la sección de configuración de globos.
-* **Archivos Extra Grandes:** Asegúrate de que el disco del NAS tenga espacio suficiente, ya que la extracción a PNG de PDFs de más de 200 MB genera una cantidad inmensa de datos temporales.
-
-## 📂 Arquitectura Interna del Pipeline
-
-El `src/orquestador.py` procesa el tomo **página por página** para acotar el uso de memoria. El flujo es:
-
-1. **Extracción (PyMuPDF, una vez):** Descompone el PDF de entrada en imágenes PNG de alta resolución (carpeta `raw/`).
-2. **Por cada página** (detección → traducción → render, liberando la RAM de esa página al terminar):
-   - **Detección y OCR local:** localiza las cajas de los globos y extrae los caracteres japoneses.
-   - **Traducción:** unifica los textos de la página, los envía en JSON a DeepSeek y recupera el español. Incluye mitigación de `HTTP 429` (Exponential Backoff) y validación anti-asiática con reintentos.
-   - **Inpainting & Render:** borra el texto original con la máscara detectada y dibuja la fuente en español (carpeta `render/`). Las páginas sin texto detectado se copian tal cual.
-3. **Reconstrucción final (una vez):** cose las imágenes de `render/` en el `.pdf` final con la coletilla `_traducido`.
-
-*Al finalizar, si el flag `--debug` no está activo, se purgan automáticamente los ficheros intermedios (`raw/`, `render/`); además, el servidor web borra el PDF de entrada para no llenar el disco del NAS.*
+- **Idiomas:** el OCR `48px` está pensado para japonés y coreano, y algo de chino. No sirve para todos los idiomas asiáticos; con tailandés, por ejemplo, da basura.
+- **Onomatopeyas (SFX):** las integradas en el dibujo se respetan tal cual, porque el detector está entrenado con globos convencionales.
+- **Globos muy juntos:** se pueden fusionar diálogos contiguos. Ajusta los umbrales de detección.
+- **Espacio en disco:** las imágenes intermedias de PDF grandes ocupan bastante hasta que se borran al terminar.
 
 ---
 
-## ⚠️ Consideraciones de la IA de Traducción
-El sistema de escaneo omite deliberadamente los **SFX (Efectos de sonido)** que estén incrustados en el arte de manera orgánica, ya que la red neuronal de `manga-image-translator` se entrena sobre globos de texto convencionales. En estos casos, las onomatopeyas se mantienen intactas tal cual como la versión japonesa original.
-
----
 **Desarrollado para el procesamiento masivo y desatendido en servidores NAS y HomeLabs.**
 
 ## Licencia
 
-Este proyecto se distribuye bajo la licencia **GNU General Public License v3.0 (GPL-3.0)**. Esto significa que cualquiera puede usar, modificar y distribuir el código libremente, siempre y cuando cualquier proyecto derivado también sea de código abierto bajo esta misma licencia. Consulta el archivo \LICENSE\ para más detalles.
+**GNU General Public License v3.0 (GPL-3.0).** Se puede usar, modificar y distribuir libremente, siempre que los derivados también sean de código abierto bajo esta licencia. Ver [`LICENSE`](LICENSE).
