@@ -12,6 +12,32 @@ Todo el procesamiento de imagen (detección de globos, OCR, borrado del texto or
 
 Está pensada para un NAS o un HomeLab con poca RAM y sin GPU dedicada.
 
+## Repos hermanos
+
+MangaScan AI y MangaDownloader son **dos repos hermanos**: se desarrollan y despliegan por separado, pero forman una sola herramienta. MangaDownloader **consigue** el manga y este repo lo **traduce**. El bot de Discord de MangaDownloader añade un botón 🌐 Traducir a cada PDF que descarga y usa esta API.
+
+| Repo | Qué hace | En el NAS |
+|---|---|---|
+| [**MangaDownloader**](https://github.com/Holkeano526/MangaDownloader) | Descarga a PDF desde 14 sitios, `!buscar` en todos a la vez, agrupación de series con DeepSeek. Bot de Discord, web y escritorio | `manga_discord_bot` (receta OMV `manga-downloader`) |
+| [**MangaScan AI**](https://github.com/Holkeano526/mangascan) | Traduce el PDF al español latino: detección y borrado en la iGPU, OCR y DeepSeek | `mangascan-ai`, puerto `8001` |
+
+**Contrato entre los dos** (`mangascan_client.py` en MangaDownloader ↔ API de MangaScan):
+
+| Endpoint de MangaScan | Para qué lo usa el bot de MangaDownloader |
+|---|---|
+| `GET /api/jobs` | Ver si MangaScan responde y si tiene trabajos en cola |
+| `POST /api/upload` | Subir el PDF (por la LAN, sin el límite de tamaño de Discord) |
+| `GET /api/stream/{task_id}` | Progreso en vivo (SSE) para el embed de Discord |
+| `GET /api/download/{task_id}` | Descargar el PDF traducido |
+| `POST /api/cancel/{task_id}` y `DELETE /api/jobs/{task_id}` | Botón ⏹️ Cancelar: parar el trabajo y borrarlo de la Biblioteca |
+
+- **Cambiar uno de estos endpoints** (ruta, campos o formato del SSE) obliga a actualizar el otro repo en el mismo ciclo: un PR en cada uno, y desplegar primero MangaScan.
+- **Configuración compartida:** el bot apunta a MangaScan con `MANGASCAN_URL` y usa la **misma clave de DeepSeek** (`DEEPSEEK_API_KEY`, modelo `deepseek-flash`) para agrupar series.
+- **Independientes:** cada uno funciona solo. Si MangaScan está apagado, el bot descarga igual y el botón 🌐 Traducir avisa de que MangaScan no responde. MangaScan tiene su propia interfaz web para subir PDFs a mano.
+- **Mismas convenciones:** documentación en español, diagrama de flujo en `docs/flujo_app.drawio(.svg)`, rama + PR por cambio e imagen base congelada para desplegar en el NAS.
+
+---
+
 ## Características
 
 - **Calidad de origen:** cada página se extrae a la **resolución nativa** del escaneo, sin ampliarla ni recomprimirla de más.
